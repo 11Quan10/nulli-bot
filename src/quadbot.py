@@ -1,36 +1,100 @@
+import asyncio
 import discord
+from discord.ext import commands, voice_recv
 from langchain_ollama import ChatOllama
+import os
 import random
 
-# shows = ["Sousou no Frieren", "Fullmetal Alchemist: Brotherhood", "Steins;Gate", "Shingeki no Kyojin", "Gintama", "Hunter x Hunter", "Bleach",
-#          "Kaguya-sama wa Kokurasetai", "Fruits Basket", "Clannad", "3-Gatsu no Lion", "Code Geass", "Monster", "Ore dake Level Up na Ken", "Kingdom",
-#          "Vinland Saga", "Mob Psycho", "Hajime no Ippo", "Haikyuu!", "Bocchi the Rock!", "Jujutsu Kaisen", "Oshi no Ko", "Tokyo Revengers", "Tokyo Ghoul", "Naruto",
-#          "One Piece", "Death Note", "Demon Slayer", "My Hero Academia", "Chainsaw Man", "86", "Violet Evergarden", "Made in Abyss", "Re:Zero", "Dragon Ball Z",
-#          "Cowboy Bebop", "Samurai Champloo", "Neon Genesis Evangelion", "Your Lie in April", "Anohana", "The Promised Neverland", "Paranoia Agent", "Serial Experiments Lain",
-#          "The Rising of the Shield Hero"]
-
+discord.opus._load_default()
 intents = discord.Intents.default()
 intents.message_content = True
 
-client = discord.Client(intents=intents)
+bot = commands.Bot(command_prefix = "$", intents=intents)
 model = ChatOllama(model="llama3.2:3b", temperature=0.5)
 
-@client.event
+@bot.event
 async def on_ready():
-    print(f'We have logged in as {client.user}')
+    print(f'We have logged in as {bot.user}')
 
-@client.event
+
+@bot.event
 async def on_message(message):
-    if message.author == client.user:
+    if message.author == bot.user:
         return
+    
+    await bot.process_commands(message)
 
-    if message.content.startswith('$chatai'):
-        response = model.invoke(message.content[8:].strip()).content
+@bot.command()
+async def chatai(ctx: commands.Context, *, prompt: str):
+    """
+    Responds to a prompt using the ChatOllama model.
+    Usage: $chatai <your prompt here>
+    """
+    print(f'{ctx.author} invoked the chatai command with prompt: {prompt}')
+    
+    response = model.invoke(prompt).content
 
-        # split messages into chunks of 2000 characters
-        # however, this does cause problems with text formatting via markdown (maybe fix this later?)
-        chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
-        for chunk in chunks:
-            await message.channel.send(chunk)
+    # split messages into chunks of 2000 characters
+    chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+    for chunk in chunks:
+        await ctx.send(chunk)
 
-client.run('__BOT_TOKEN__')
+@bot.command()
+async def fart(ctx: commands.Context):
+    print(f'{ctx.author} invoked the fart command')
+    await ctx.send(f'{ctx.author.mention} farted! 💨') # sends a message in the channel where the command was invoked
+
+
+@bot.command()
+async def join(ctx):
+    channel = ctx.author.voice.channel
+    if channel is None:
+        await ctx.send("join a vc first")
+        return
+    await channel.connect(cls=voice_recv.VoiceRecvClient)
+
+@bot.command()
+async def leave(ctx):
+    if ctx.voice_client is not None:
+        await ctx.voice_client.disconnect()
+        
+
+@bot.command()
+async def play(ctx, file: str):
+    vchannel = ctx.author.voice.channel
+    if vchannel is None:
+        await ctx.send("You need to be in a voice channel to play audio.")
+        return
+    
+    audio_src = "assets\\" + file + ".mp3"
+    if not os.path.exists(audio_src):
+        await ctx.send(f"Audio file '{file}' not found.")
+        return
+    
+    await play_audio(vchannel, audio_src)
+
+async def play_audio(vchannel, filename: str):
+    vclient = await vchannel.connect(cls=voice_recv.VoiceRecvClient)
+
+    src = discord.FFmpegPCMAudio(source=filename, executable='C:\\ffmpeg-7.1.1-full_build\\ffmpeg-7.1.1-full_build\\bin\\ffmpeg.exe')
+    vclient.play(src)
+    
+    while vclient.is_playing():
+        await asyncio.sleep(.1)
+    await vclient.disconnect()
+
+
+
+
+@bot.command()
+async def test(ctx):
+    print("test")
+    def callback(user, data: voice_recv.VoiceData):
+        print(f"packet from {user}")
+        
+    vc = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+    vc.listen(voice_recv.BasicSink(callback))
+
+
+
+bot.run('__BOT_TOKEN__')
