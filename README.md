@@ -1,5 +1,5 @@
 # quadbot
-Authors: Adrian Munoz, Daniel Nguyen, Quan Pham
+Authors: Adrian Munoz, Daniel Nguyen, Quan Pham \
 For our NLP project, we'll be creating a discord assistant bot with various features. Our goal is to have the bot act as a regular user that can join in on conversations without any sense of awkwardness.
 
 # WIP
