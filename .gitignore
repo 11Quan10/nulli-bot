@@ -46,4 +46,6 @@ rever/
 # setuptools-scm
 conda/_version.py
 
+.env
 .venv
+assets/*
