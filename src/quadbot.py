@@ -120,10 +120,10 @@ async def once_done(sink: discord.sinks, channel: discord.TextChannel, *args):  
     AS = AudioSub("assets")  # Create an instance of AudioSub with the directory where audio files are stored.
     await channel.send(AS.transcribe())
 
-    # delete files in assets directory
-    for file in os.listdir("assets"):
-        if file.endswith(".wav"):
-            os.remove(os.path.join("assets", file))
+    # # delete files in assets directory
+    # for file in os.listdir("assets"):
+    #     if file.endswith(".wav"):
+    #         os.remove(os.path.join("assets", file))
     
 
 @bot.command()
