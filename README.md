@@ -14,3 +14,14 @@ Current functionalities:
 ## How to set up
 Please view `requirements.txt` for list of dependencies.
 Main libraries being used: pycord, whisper, langchain_ollama, SpeechRecognition
+
+
+COMPILE THIS INTO A REQUIREMENTS.TXT LATER
+
+```bash 
+pip install -qU langchain-elasticsearch
+```
+
+Have Docker installed
+curl -fsSL https://elastic.co/start-local | sh
+
