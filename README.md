@@ -18,8 +18,13 @@ Main libraries being used: pycord, whisper, langchain_ollama, SpeechRecognition
 
 COMPILE THIS INTO A REQUIREMENTS.TXT LATER
 
-```bash 
-pip install -qU langchain-elasticsearch
+```bash
+pip install py-cord python-dotenv langchain langgraph langsmith langchain_ollama langchain-text-splitters langchain-community langchain_elasticsearch
+pip install insanely-fast-whisper --ignore-requires-python
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install --upgrade transformers optimum accelerate
+pip install -q kokoro>=0.9.4 soundfile
+download ffmpeg https://www.gyan.dev/ffmpeg/builds/ and configure the PATH variable to /bin
 ```
 
 Have Docker installed
