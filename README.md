@@ -19,11 +19,14 @@ Main libraries being used: pycord, whisper, langchain_ollama, SpeechRecognition
 COMPILE THIS INTO A REQUIREMENTS.TXT LATER
 
 ```bash
-pip install py-cord python-dotenv langchain langgraph langsmith langchain_ollama langchain-text-splitters langchain-community langchain_elasticsearch
+pip install py-cord[voice] python-dotenv langchain langgraph langsmith langchain_ollama langchain-text-splitters langchain-community langchain_elasticsearch
 pip install insanely-fast-whisper --ignore-requires-python
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install --upgrade transformers optimum accelerate
 pip install -q kokoro>=0.9.4 soundfile
+# for japanese
+pip install misaki[ja]
+python -m unidic download
 download ffmpeg https://www.gyan.dev/ffmpeg/builds/ and configure the PATH variable to /bin
 ```
 
