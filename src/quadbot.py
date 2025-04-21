@@ -1,5 +1,5 @@
 import asyncio
-from audiosub3 import AudioSub
+from audiosub import AudioSub
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv

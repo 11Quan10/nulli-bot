@@ -17,7 +17,7 @@ class AudioSub:
             if is_flash_attn_2_available()
             else {"attn_implementation": "sdpa"},
         )
-        self.tts = KPipeline(lang_code="a")
+        self.tts = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
 
     def transcribe(self):
         audio_files = glob.glob(self.audio_path + "\\*.wav")
