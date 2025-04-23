@@ -20,6 +20,10 @@ COMPILE THIS INTO A REQUIREMENTS.TXT LATER
 
 ```bash
 pip install py-cord[voice] python-dotenv langchain langgraph langsmith langchain_ollama langchain-text-splitters langchain-community langchain_elasticsearch
+
+pip install -qU langchain-qdrant
+pip install fastembed
+
 pip install insanely-fast-whisper --ignore-requires-python
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install --upgrade transformers optimum accelerate
