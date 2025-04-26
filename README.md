@@ -24,6 +24,8 @@ pip install py-cord[voice] python-dotenv langchain langgraph langsmith langchain
 pip install -qU langchain-qdrant
 pip install fastembed
 
+pip install -qU duckduckgo-search langchain-community
+
 pip install insanely-fast-whisper --ignore-requires-python
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install --upgrade transformers optimum accelerate
