@@ -5,7 +5,7 @@ import soundfile as sf
 import pyrubberband as pyrb
 import torch
 import discord
-from discord.ext import commands, voice_recv
+from discord.ext import commands
 from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 import os
@@ -60,7 +60,7 @@ async def join(ctx):
     if channel is None:
         await ctx.send("join a vc first")
         return
-    await channel.connect(cls=voice_recv.VoiceRecvClient)
+    await channel.connect()
 
 @bot.command()
 async def leave(ctx):
@@ -83,7 +83,7 @@ async def play(ctx, file: str):
     await play_audio(vchannel, audio_src)
 
 async def play_audio(vchannel, filename: str):
-    vclient = await vchannel.connect(cls=voice_recv.VoiceRecvClient)
+    vclient = await vchannel.connect()
 
     src = discord.FFmpegPCMAudio(source=filename, executable='C:\\ffmpeg-7.1.1-full_build\\ffmpeg-7.1.1-full_build\\bin\\ffmpeg.exe')
     vclient.play(src)
@@ -143,21 +143,25 @@ async def stop_recording(ctx):
     else:
         await ctx.send("I am currently not recording here.")  # Respond with this if we aren't recording.
 
-async def speak(text):
+async def speak(text: str):
     rate = 24000
     generator = pipeline(text, voice='af_heart')
     for i, (gs, ps, audio) in enumerate(generator):
-        if (i>0):
+        if (i > 0):
             return
+        
+        audio = audio.numpy()
         audio = pyrb.time_stretch(audio, rate, 0.9)
         audio = pyrb.pitch_shift(audio, rate, n_steps=2)
         sf.write("speaking.wav", audio, rate)
 
 
 @bot.command()
-async def test_speak(ctx, text):
-    speak(text)
-    play_audio(ctx, "speaking.wav")
+async def test_speak(ctx, text: str):
+    vchannel = ctx.author.voice.channel
+
+    await speak(text)
+    await play_audio(vchannel, "speaking.wav")
 
 
 
