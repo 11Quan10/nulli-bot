@@ -85,7 +85,7 @@ async def play(ctx, file: str):
 async def play_audio(vchannel, filename: str):
     vclient = await vchannel.connect()
 
-    src = discord.FFmpegPCMAudio(source=filename, executable='C:\\ffmpeg-7.1.1-full_build\\ffmpeg-7.1.1-full_build\\bin\\ffmpeg.exe')
+    src = discord.FFmpegPCMAudio(source=filename, executable='ffmpeg.exe')
     vclient.play(src)
     
     while vclient.is_playing():
@@ -147,21 +147,22 @@ async def speak(text: str):
     rate = 24000
     generator = pipeline(text, voice='af_heart')
     for i, (gs, ps, audio) in enumerate(generator):
-        if (i > 0):
-            return
-        
+        max_i = i
+        print(i)
         audio = audio.numpy()
-        audio = pyrb.time_stretch(audio, rate, 0.9)
-        audio = pyrb.pitch_shift(audio, rate, n_steps=2)
-        sf.write("speaking.wav", audio, rate)
+        audio = pyrb.time_stretch(audio, rate, 0.95)
+        audio = pyrb.pitch_shift(audio, rate, n_steps=3)
+        sf.write(f'{i}.wav', audio, rate)
+    return max_i
 
 
 @bot.command()
 async def test_speak(ctx, text: str):
     vchannel = ctx.author.voice.channel
 
-    await speak(text)
-    await play_audio(vchannel, "speaking.wav")
+    i = await speak(text)
+    for j in range(i+1):
+        await play_audio(vchannel, f'{j}.wav')
 
 
 
