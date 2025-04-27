@@ -34,6 +34,10 @@ pip install -q kokoro>=0.9.4 soundfile
 pip install misaki[ja]
 python -m unidic download
 download ffmpeg https://www.gyan.dev/ffmpeg/builds/ and configure the PATH variable to /bin
+download rubberband https://breakfastquay.com/rubberband/ and configue the PATH variable to extracted zip folder (contains rubberband.exe)
+pip install pyrubberband
+
+
 ```
 
 Have Docker installed
