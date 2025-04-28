@@ -49,3 +49,5 @@ conda/_version.py
 .env
 .venv
 assets/*
+# Qdrant Vectorstore
+src/tmp
