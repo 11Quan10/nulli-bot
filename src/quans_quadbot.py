@@ -1,0 +1,202 @@
+import asyncio
+from audiosub import AudioSub
+from kokoro import KPipeline
+import soundfile as sf
+import pyrubberband as pyrb
+import torch
+import discord
+from discord.ext import commands, voice_recv
+from dotenv import load_dotenv
+from langchain_ollama import ChatOllama
+import os
+from silero_vad import VoiceActivityDetector
+import numpy as np
+
+discord.opus._load_default()
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix = "$", intents=intents)
+model = ChatOllama(model="llama3.2:3b", temperature=0.5)
+connections = {}
+
+recording = True
+vad = VoiceActivityDetector()
+
+#load kokoro voice
+pipeline = KPipeline(lang_code='a')
+
+@bot.event
+async def on_ready():
+    print(f'We have logged in as {bot.user}')
+
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    
+    await bot.process_commands(message)
+
+@bot.command()
+async def chatai(ctx: commands.Context, *, prompt: str):
+    """
+    Responds to a prompt using the ChatOllama model.
+    Usage: $chatai <your prompt here>
+    """
+    print(f'{ctx.author} invoked the chatai command with prompt: {prompt}')
+    
+    response = model.invoke(prompt).content
+
+    # split messages into chunks of 2000 characters
+    chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+    for chunk in chunks:
+        await ctx.send(chunk)
+
+@bot.command()
+async def fart(ctx: commands.Context):
+    print(f'{ctx.author} invoked the fart command')
+    await ctx.send(f'{ctx.author.mention} farted! 💨') # sends a message in the channel where the command was invoked
+
+
+@bot.command()
+async def join(ctx):
+    channel = ctx.author.voice.channel
+    if channel is None:
+        await ctx.send("join a vc first")
+        return
+    await channel.connect()
+
+@bot.command()
+async def leave(ctx):
+    if ctx.voice_client is not None:
+        await ctx.voice_client.disconnect()
+        
+
+@bot.command()
+async def play(ctx, file: str):
+    vchannel = ctx.author.voice.channel
+    if vchannel is None:
+        await ctx.send("You need to be in a voice channel to play audio.")
+        return
+    
+    audio_src = "assets\\" + file + ".mp3"
+    if not os.path.exists(audio_src):
+        await ctx.send(f"Audio file '{file}' not found.")
+        return
+    
+    await play_audio(vchannel, audio_src)
+
+async def play_audio(vchannel, filename: str):
+    vclient = await vchannel.connect(cls=voice_recv.VoiceRecvClient)
+
+    src = discord.FFmpegPCMAudio(source=filename, executable='ffmpeg.exe')
+    vclient.play(src)
+    
+    while vclient.is_playing():
+        await asyncio.sleep(.1)
+    await vclient.disconnect()
+
+
+@bot.command()
+async def record(ctx):  # If you're using commands.Bot, this will also work.
+    voice = ctx.author.voice
+
+    if not voice:
+        await ctx.send("You aren't in a voice channel!")
+
+    vc = await voice.channel.connect()  # Connect to the voice channel the author is in.
+    connections.update({ctx.guild.id: vc})  # Updating the cache with the guild and channel.
+
+    silence_duration = 0
+    silence_threshold = 5
+    i = 1
+
+    while recording:
+        vc.start_recording(
+            discord.sinks.WaveSink(),  # The sink type to use.
+            once_done,  # What to do once done.
+            ctx.channel  # The channel to disconnect from.
+        )
+        await ctx.send(f"Recording #{i}")
+
+        while True:
+            # Check for voice activity in the audio stream
+            audio_packet = await vc.recv_audio_packet()
+            if audio_packet and audio_packet.decrypted_audio:
+                pcm = np.frombuffer(audio_packet.decrypted_audio, dtype=np.int16)
+                if vad.is_speech(pcm, sample_rate=16000):
+                    silence_duration = 0  # Reset silence duration if speech is detected
+                else:
+                    silence_duration += 1
+            else:
+                silence_duration += 1
+
+            if silence_duration >= silence_threshold:
+                break
+
+            await asyncio.sleep(1)  # Check every second
+
+        vc.stop_recording()  # Stop recording, and call the callback (once_done).
+
+async def once_done(sink: discord.sinks, channel: discord.TextChannel, *args):  # Our voice client already passes these in.
+    recorded_users = [  # A list of recorded users
+        f"<@{user_id}>"
+        for user_id, audio in sink.audio_data.items()
+    ]
+
+    if recording == False:
+        await sink.vc.disconnect()  # Disconnect from the voice channel.
+    files = [discord.File(audio.file, f"{user_id}.{sink.encoding}") for user_id, audio in sink.audio_data.items()]  # List down the files.
+
+    for user_id, audio in sink.audio_data.items():
+        with open(f"assets\\{user_id}-output.wav", "wb") as f:  # Open the recorded audio file.
+            f.write(audio.file.getbuffer())  # Write the audio data to the file.
+
+    await channel.send(f"finished recording audio for: {', '.join(recorded_users)}.", files=files)  # Send a message with the accumulated files.
+    AS = AudioSub("assets")  # Create an instance of AudioSub with the directory where audio files are stored.
+    await channel.send(AS.transcribe())
+
+    # delete files in assets directory
+    for file in os.listdir("assets"):
+        if file.endswith(".wav"):
+            os.remove(os.path.join("assets", file))
+    
+
+@bot.command()
+async def stop_recording(ctx):
+    if ctx.guild.id in connections:  # Check if the guild is in the cache.
+        vc = connections[ctx.guild.id]
+        recording = False
+        vc.stop_recording()  # Stop recording, and call the callback (once_done).
+        del connections[ctx.guild.id]  # Remove the guild from the cache.
+        await ctx.message.delete()  # And delete.
+    else:
+        await ctx.send("I am currently not recording here.")  # Respond with this if we aren't recording.
+
+async def speak(text: str):
+    rate = 24000
+    generator = pipeline(text, voice='af_heart')
+    for i, (gs, ps, audio) in enumerate(generator):
+        max_i = i
+        print(i)
+        audio = audio.numpy()
+        audio = pyrb.time_stretch(audio, rate, 0.95)
+        audio = pyrb.pitch_shift(audio, rate, n_steps=3)
+        sf.write(f'{i}.wav', audio, rate)
+    return max_i
+
+
+@bot.command()
+async def test_speak(ctx, text: str):
+    vchannel = ctx.author.voice.channel
+
+    i = await speak(text)
+    for j in range(i+1):
+        await play_audio(vchannel, f'{j}.wav')
+
+
+
+load_dotenv()
+token = os.getenv('DISCORD_BOT_TOKEN')
+bot.run(token)
