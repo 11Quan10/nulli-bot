@@ -1,15 +1,15 @@
 import time
 from langsmith import traceable
 from langgraph.graph import END, StateGraph, START
-from typing import Annotated, Literal
+from typing import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage
 from graph.models import Models
 from graph.memory import Memory
+from graph.prompts.prompt import Prompts
 from graph.chains.search import SearchChain
-from graph.chains.summarize import SummarizeChain
-from graph.chains.summarize_iterative import IterativelySummarizeChain
+from graph.chains.iteratively_summarize import IterativelySummarizeChain
 from graph.chains.retrieve import RetrieveChain
 from graph.chains.respond import RespondChain
 from graph.chains.filter import FilterChain
@@ -52,24 +52,18 @@ class Graph:
     def _build_graph(self):
         models = Models()
         memory = Memory(models.embeddings, models.sparse_embeddings)
+        prompts = Prompts()
         search_chain = SearchChain()
-        summarize_chain = SummarizeChain(model_llm=models.model_llm)
-        iteratively_summarize_chain = IterativelySummarizeChain(model_llm=models.model_llm)
+        iteratively_summarize_chain = IterativelySummarizeChain(
+            model_llm=models.model_llm, prompt=prompts.iteratively_summarize_prompt
+        )
         retrieve_chain = RetrieveChain(retriever=memory.retriever)
-        respond_chain = RespondChain(model_llm=models.model_llm)
+        respond_chain = RespondChain(model_llm=models.model_llm, prompt=prompts.respond_prompt)
         filter_chain = FilterChain(model_guard=models.model_guard)
 
         async def search(state):
             search_results = await search_chain.search_chain.ainvoke({"context": state["context"]})
             return {"context": search_results, "messages": [AIMessage(content=search_results, id="1")]}
-
-        def is_summary_empty(state) -> Literal["summarize", "iteratively_summarize"]:
-            return "summarize" if self.current_summary == "" else "iteratively_summarize"
-
-        async def summarize(state):
-            summary = await summarize_chain.summarize_chain.ainvoke({"context": state["context"]})
-            self.current_summary = summary
-            return {"new_summary": summary, "messages": [AIMessage(content=summary, id="1")]}
 
         async def iteratively_summarize(state):
             summary = await iteratively_summarize_chain.iteratively_summarize_chain.ainvoke(
@@ -102,13 +96,12 @@ class Graph:
                 return {"messages": [AIMessage(content=f"response is unsafe: {filter_result['reason']}", id="5")]}
 
         workflow = StateGraph(AgentState)
-        workflow.add_node("summarize", summarize)
         workflow.add_node("iteratively_summarize", iteratively_summarize)
         workflow.add_node("respond", respond)
         workflow.add_node("filter_response", filter_response)
         workflow.add_node("retrieve", retrieve)
 
-        workflow.add_conditional_edges(START, is_summary_empty)
+        workflow.add_edge(START, "iteratively_summarize")
         workflow.add_edge(START, "retrieve")
         workflow.add_edge(["retrieve"], "respond")
         workflow.add_edge("respond", "filter_response")

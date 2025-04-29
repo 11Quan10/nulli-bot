@@ -51,3 +51,6 @@ conda/_version.py
 assets/*
 # Qdrant Vectorstore
 src/tmp
+# prompts
+src/graph/prompts/*
+!src/graph/prompts/prompt.py
