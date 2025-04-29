@@ -156,6 +156,23 @@ async def stop_recording(ctx):
     else:
         await ctx.send("I am currently not recording here.")  # Respond with this if we aren't recording.
 
+# this is a proof of concept
+@bot.event
+async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    if member.id == bot.user.id:
+        return
+    if before.channel is None and after.channel is not None:
+        if after.channel.id in [vc.channel.id for vc in bot.voice_clients]:
+            AS = AudioSub("assets")
+            AS.text_to_speech(f"Hi there {member.name}", "temp")
+            audio_src = "assets\\" + "temp" + ".wav"
+            vclient = filter(lambda vc: vc.channel.id == after.channel.id, bot.voice_clients)
+            vclient = list(vclient)[0] if vclient else None
+            src = discord.FFmpegPCMAudio(source=audio_src)
+            vclient.play(src)
+            while vclient.is_playing():
+                await asyncio.sleep(0.1)
+
 
 async def speak(text: str):
     rate = 24000
