@@ -1,16 +1,16 @@
 import asyncio
-from audiosub import AudioSub
+from audiosub_fork import AudioSub
 from kokoro import KPipeline
 import soundfile as sf
 import pyrubberband as pyrb
 import torch
 import discord
-from discord.ext import commands, voice_recv
+from discord.ext import commands
 from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 import os
-from silero_vad import VoiceActivityDetector
 import numpy as np
+import datetime, wave, io
 
 discord.opus._load_default()
 intents = discord.Intents.default()
@@ -19,9 +19,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix = "$", intents=intents)
 model = ChatOllama(model="llama3.2:3b", temperature=0.5)
 connections = {}
-
-recording = True
-vad = VoiceActivityDetector()
 
 #load kokoro voice
 pipeline = KPipeline(lang_code='a')
@@ -88,7 +85,7 @@ async def play(ctx, file: str):
     await play_audio(vchannel, audio_src)
 
 async def play_audio(vchannel, filename: str):
-    vclient = await vchannel.connect(cls=voice_recv.VoiceRecvClient)
+    vclient = await vchannel.connect()
 
     src = discord.FFmpegPCMAudio(source=filename, executable='ffmpeg.exe')
     vclient.play(src)
@@ -104,75 +101,89 @@ async def record(ctx):  # If you're using commands.Bot, this will also work.
 
     if not voice:
         await ctx.send("You aren't in a voice channel!")
+        return
 
-    vc = await voice.channel.connect()  # Connect to the voice channel the author is in.
+    vc: discord.VoiceClient = ctx.voice_client
+    if not vc or vc is None:
+        vc: discord.VoiceClient = await voice.channel.connect()
+
     connections.update({ctx.guild.id: vc})  # Updating the cache with the guild and channel.
 
-    silence_duration = 0
-    silence_threshold = 5
-    i = 1
+    vc.start_recording(
+        discord.sinks.WaveSink(),  # The sink type to use.
+        finished_callback,  # What to do once done.
+        ctx.channel,  # The channel to disconnect from.
+        sync_start=False
+    )
 
-    while recording:
-        vc.start_recording(
-            discord.sinks.WaveSink(),  # The sink type to use.
-            once_done,  # What to do once done.
-            ctx.channel  # The channel to disconnect from.
-        )
-        await ctx.send(f"Recording #{i}")
+    async def monitor_audio():
+        global is_speaking
+        is_speaking = True
+        prev_file_size = 0
+        was_speaking = False
+        while vc.recording:
+            for user_id, audio_data in vc.sink.audio_data.items():
+                curr_file_size = audio_data.file.tell()
 
-        while True:
-            # Check for voice activity in the audio stream
-            audio_packet = await vc.recv_audio_packet()
-            if audio_packet and audio_packet.decrypted_audio:
-                pcm = np.frombuffer(audio_packet.decrypted_audio, dtype=np.int16)
-                if vad.is_speech(pcm, sample_rate=16000):
-                    silence_duration = 0  # Reset silence duration if speech is detected
+                if curr_file_size > prev_file_size:
+                    is_speaking = True
+                    was_speaking = True
+                    prev_file_size = audio_data.file.tell()
                 else:
-                    silence_duration += 1
-            else:
-                silence_duration += 1
+                    is_speaking = False
 
-            if silence_duration >= silence_threshold:
-                break
+                # print("is_speaking:", is_speaking)
+                await ctx.send(f"Somebody is speaking (guess): {is_speaking}")
 
-            await asyncio.sleep(1)  # Check every second
+                # When user stops speaking, export the audio segment to a file
+                if not is_speaking and was_speaking:
+                    was_speaking = False
 
-        vc.stop_recording()  # Stop recording, and call the callback (once_done).
+                    # Extract the audio segment
+                    audio_data.file.seek(0)  # Go to the beginning of the file
+                    data_to_write = audio_data.file.read()  # Read the entire content
 
-async def once_done(sink: discord.sinks, channel: discord.TextChannel, *args):  # Our voice client already passes these in.
-    recorded_users = [  # A list of recorded users
-        f"<@{user_id}>"
-        for user_id, audio in sink.audio_data.items()
-    ]
+                    # Write the audio segment to a file
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    filename = f"..\\assets\\{user_id}_{timestamp}-output.wav"
+                    with wave.open(filename, 'wb') as wf:
+                        wf.setnchannels(2)  # Set the number of channels
+                        wf.setsampwidth(2)  # Set the sample width (in bytes)
+                        wf.setframerate(24000)  # Set the frame rate (samples per second)
+                        wf.writeframes(data_to_write)
 
-    if recording == False:
-        await sink.vc.disconnect()  # Disconnect from the voice channel.
-    files = [discord.File(audio.file, f"{user_id}.{sink.encoding}") for user_id, audio in sink.audio_data.items()]  # List down the files.
+                    # AS = AudioSub()  # Create an instance of AudioSub with the directory where audio files are stored.
+                    # await ctx.send(f"<@{user_id}> said: \"{AS.transcribe(filename)}\"")
+                    # await asyncio.sleep(0.2)
+                    # os.remove(filename)
+                    
+                    # Reset the BytesIO object for the next speech segment
+                    audio_data.file = io.BytesIO()
+                    prev_file_size = 0
+                
+            await asyncio.sleep(3)  # Adjust the interval as needed
 
-    for user_id, audio in sink.audio_data.items():
-        with open(f"assets\\{user_id}-output.wav", "wb") as f:  # Open the recorded audio file.
-            f.write(audio.file.getbuffer())  # Write the audio data to the file.
+    bot.loop.create_task(monitor_audio())
+    await ctx.send("Started!")
 
-    await channel.send(f"finished recording audio for: {', '.join(recorded_users)}.", files=files)  # Send a message with the accumulated files.
-    AS = AudioSub("assets")  # Create an instance of AudioSub with the directory where audio files are stored.
-    await channel.send(AS.transcribe())
-
-    # delete files in assets directory
-    for file in os.listdir("assets"):
-        if file.endswith(".wav"):
-            os.remove(os.path.join("assets", file))
+async def finished_callback(sink: discord.sinks.WaveSink, channel: discord.TextChannel):
+    asyncio.run_coroutine_threadsafe(channel.send("Recording finished!"), bot.loop)
+    global is_speaking
+    is_speaking = False
+    print("Recording finished, no more audio frames detected.")
+    await channel.send("Recording finished, no more audio frames detected.")
     
-
 @bot.command()
 async def stop_recording(ctx):
     if ctx.guild.id in connections:  # Check if the guild is in the cache.
         vc = connections[ctx.guild.id]
-        recording = False
         vc.stop_recording()  # Stop recording, and call the callback (once_done).
         del connections[ctx.guild.id]  # Remove the guild from the cache.
         await ctx.message.delete()  # And delete.
+        await ctx.send("Recording has ended!")
     else:
         await ctx.send("I am currently not recording here.")  # Respond with this if we aren't recording.
+
 
 async def speak(text: str):
     rate = 24000
