@@ -22,6 +22,7 @@ connections = {}
 
 # load kokoro voice
 pipeline = KPipeline(lang_code="a", device="cpu")
+can_speak = True
 
 
 @bot.event
@@ -98,6 +99,16 @@ async def play_audio(vchannel, filename: str):
     while vclient.is_playing():
         await asyncio.sleep(0.1)
     await vclient.disconnect()
+
+@bot.command()
+async def test_stop(ctx):
+    vclient = discord.utils.get(bot.voice_clients, guild = ctx.guild)
+    global can_speak
+    can_speak = False
+    if vclient.is_playing():
+        vclient.stop()
+
+
 
 
 @bot.command()
@@ -193,10 +204,17 @@ async def speak(text: str):
 @bot.command()
 async def test_speak(ctx, text: str):
     vchannel = ctx.author.voice.channel
-
+    global can_speak
     i = await speak(text)
     for j in range(i + 1):
+        if not can_speak:
+            break
         await play_audio(vchannel, f"{j}.wav")
+    if not can_speak:
+        i = await speak("Filtered")
+        for j in range(i + 1):
+            await play_audio(vchannel, f"{j}.wav")
+        can_speak = True
 
 
 load_dotenv()
