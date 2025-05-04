@@ -54,3 +54,13 @@ src/tmp
 # prompts
 src/graph/prompts/*
 !src/graph/prompts/prompt.py
+
+# some stuff from notebook on finetuning
+unsloth_compiled_cache
+llama.cpp
+outputs
+model
+__pycache__
+Modelfile
+OUTPUT*
+audio
