@@ -1,13 +1,15 @@
+import asyncio
+import re
 import time
 from langsmith import traceable
 from langgraph.graph import END, StateGraph, START
 from typing import Annotated
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from graph.models import Models
 from graph.memory import Memory
-from graph.prompts.prompt import Prompts
+from graph.system_prompts import SystemPrompts
 from graph.chains.search import SearchChain
 from graph.chains.iteratively_summarize import IterativelySummarizeChain
 from graph.chains.retrieve import RetrieveChain
@@ -21,13 +23,17 @@ class AgentState(TypedDict):
     # The add_messages function defines how an update should be processed
     # Default is to replace. add_messages says "append"
     messages: Annotated[list, add_messages]
-    context: str
+    context: list[HumanMessage]
     current_summary: str
     new_summary: str
     memory: str
     response: str
     start_time: float
     response_time: float
+
+    vclient: any
+    tts_callback: any
+    stop_audio_callback: any
 
 
 class Graph:
@@ -37,13 +43,17 @@ class Graph:
         self._save_graph_as_png()
 
     @traceable
-    async def invoke_model(self, context: str):
+    async def invoke_model_with_human_messages(
+        self, messages: list[HumanMessage], _vclient=None, _tts_callback=None, _stop_audio_callback=None
+    ):
         results = await self.graph.ainvoke(
             {
                 "current_summary": self.current_summary,
-                # "context": "Your close friend Ryo Yamada asks: When is your birthday?",
-                "context": context,
+                "context": messages,
                 "start_time": time.time(),
+                "vclient": _vclient,
+                "tts_callback": _tts_callback,
+                "stop_audio_callback": _stop_audio_callback,
             }
         )
         print(results)
@@ -51,38 +61,50 @@ class Graph:
 
     def _build_graph(self):
         models = Models()
-        memory = Memory(models.embeddings, models.sparse_embeddings)
-        prompts = Prompts()
-        search_chain = SearchChain()
-        iteratively_summarize_chain = IterativelySummarizeChain(
-            model_llm=models.model_llm, prompt=prompts.iteratively_summarize_prompt
-        )
-        retrieve_chain = RetrieveChain(retriever=memory.retriever)
-        respond_chain = RespondChain(model_llm=models.model_llm, prompt=prompts.respond_prompt)
+        # memory = Memory(models.embeddings, models.sparse_embeddings)
+        system_prompts = SystemPrompts()
+        # search_chain = SearchChain()
+        # iteratively_summarize_chain = IterativelySummarizeChain(model_llm=models.model_llm)
+        # retrieve_chain = RetrieveChain(retriever=memory.retriever)
+        respond_chain = RespondChain(model_llm=models.model_llm)
         filter_chain = FilterChain(model_guard=models.model_guard)
 
         async def search(state):
-            search_results = await search_chain.search_chain.ainvoke({"context": state["context"]})
-            return {"context": search_results, "messages": [AIMessage(content=search_results, id="1")]}
+            # search_results = await search_chain.search_chain.ainvoke({"context": state["context"]})
+            # return {"context": search_results, "messages": [AIMessage(content=search_results, id="1")]}
+            pass
 
         async def iteratively_summarize(state):
-            summary = await iteratively_summarize_chain.iteratively_summarize_chain.ainvoke(
-                {"current_summary": state["current_summary"], "context": state["context"]}
-            )
-            self.current_summary = summary
-            return {"new_summary": summary, "messages": [AIMessage(content=summary, id="2")]}
+            # summary = await iteratively_summarize_chain.iteratively_summarize_chain.ainvoke(
+            #     {"current_summary": state["current_summary"], "context": state["context"]}
+            # )
+            # self.current_summary = summary
+            # return {"new_summary": summary, "messages": [AIMessage(content=summary, id="2")]}
+            pass
 
         async def retrieve(state):
-            memory = await retrieve_chain.retrieve_chain.ainvoke(state["current_summary"] + " " + state["context"])
-            return {"memory": memory, "messages": [AIMessage(content=memory, id="6")]}
+            # memory = await retrieve_chain.retrieve_chain.ainvoke(state["current_summary"] + " " + state["context"])
+            # return {"memory": memory, "messages": [AIMessage(content=memory, id="6")]}
+            pass
 
         async def respond(state):
             response = await respond_chain.respond_chain.ainvoke(
-                {"context": state["context"], "new_summary": state["current_summary"], "memory": state["memory"]}
+                [
+                    SystemMessage(content=system_prompts.respond_system_prompt),
+                    *state["context"],
+                ]
             )
+            # filter out action indicators from response
+            response = re.sub(r"\*[^*]+\*", "", response).strip()
+            response = re.sub(r"\:[^:]+\:", "", response).strip()
+            response = re.sub(r"\([^)]*\)", "", response).strip()
+
+            # play text as audio
+            if state["vclient"] is not None and state["tts_callback"] is not None:
+                asyncio.create_task(state["tts_callback"](state["vclient"], response))
             return {
                 "response": response,
-                "messages": [AIMessage(content=response, id="3")],
+                "messages": [AIMessage(content=response, id="Response")],
                 "response_time": time.time(),
             }
 
@@ -90,10 +112,20 @@ class Graph:
             filter_result = await filter_chain.filter_chain.ainvoke(state["response"])
             if filter_result["safe"]:
                 return {
-                    "messages": [AIMessage(content="response is safe", id="4")],
+                    "messages": [AIMessage(content=f"Response is safe. Response={state['response']}", id="Filter OK")],
                 }
             else:
-                return {"messages": [AIMessage(content=f"response is unsafe: {filter_result['reason']}", id="5")]}
+                if state["vclient"] is not None and state["stop_audio_callback"] is not None:
+                    asyncio.create_task(state["stop_audio_callback"](state["vclient"]))
+
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"Response is unsafe: {filter_result['reason']}. Resposne={state['response']}",
+                            id="Filter BAD",
+                        )
+                    ]
+                }
 
         workflow = StateGraph(AgentState)
         workflow.add_node("iteratively_summarize", iteratively_summarize)

@@ -19,7 +19,9 @@ Main libraries being used: pycord, whisper, langchain_ollama, SpeechRecognition
 COMPILE THIS INTO A REQUIREMENTS.TXT LATER
 
 ```bash
-pip install py-cord[voice] python-dotenv langchain langgraph langsmith langchain_ollama langchain-text-splitters langchain-community langchain_elasticsearch
+pip install discord.py[voice]
+pip install discord-ext-voice-recv
+pip install python-dotenv langchain langgraph langsmith langchain_ollama langchain-text-splitters langchain-community langchain_elasticsearch
 
 pip install -qU langchain-qdrant
 pip install fastembed
