@@ -87,7 +87,11 @@ async def invoke(ctx: commands.Context, *, text: str):
         _tts_callback=speak,
         _stop_audio_callback=filter_speak,
     )
-    await ctx.send(response["response"])
+    # await ctx.send(response["response"])
+    print(response["response"])
+    for message in response["messages"]:
+        message.pretty_print()
+    await ctx.send("response sent")
 
 
 # SERVICE FUNCTIONS
