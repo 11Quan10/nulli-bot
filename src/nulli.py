@@ -3,6 +3,8 @@ from audiosub import AudioSub
 from kokoro import KPipeline
 import soundfile as sf
 import pyrubberband as pyrb
+import codecs
+import re
 import torch
 import discord
 from discord.ext import commands
@@ -14,12 +16,12 @@ import os
 
 from graph.graph import Graph
 
+# load discord defaults
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 
-# start with one channel for now
-# connections = {}
+# initialize per-server variables
 connections = {}
 can_speak = {}
 
@@ -34,6 +36,15 @@ if not os.path.exists(audio_root):
 
 load_dotenv()
 token = os.getenv("DISCORD_BOT_TOKEN")
+
+# load filtered words from encrypted txt
+if os.path.exists('bad_words.txt'):
+    with open('bad_words.txt', 'r') as file:
+        content = codecs.encode(file.read(), 'rot13')
+    filtered_words = [word.strip() for word in content.split(",")]
+    filter_pattern = re.compile(r'\b(' + '|'.join(filtered_words) + r')\b', flags=re.IGNORECASE)
+else:
+    filter_pattern = re.compile(r'(?!)')
 
 graph = Graph()
 
@@ -111,6 +122,12 @@ async def text_to_audio_segments(text: str):
         audio = pyrb.pitch_shift(audio, rate, n_steps=3)
         sf.write(f"{audio_root}/{i}.wav", audio, rate)
     return max_i
+
+async def filter_regex(text: str):
+    match = filter_pattern.search(text)
+    if match:
+        return match.group()
+    return None
 
 
 async def speak(ctx, text: str):
