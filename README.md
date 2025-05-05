@@ -39,7 +39,6 @@ Nulli is an AI-powered Discord bot built for natural, real-time voice interactio
 ```bash
 pip install python-dotenv
 pip install discord.py[voice]
-pip install discord-ext-voice-recv
 ```
 
 #### 🧠 LLM + RAG Stack
@@ -59,6 +58,8 @@ pip install duckduckgo-search
 pip install SpeechRecognition
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install --upgrade transformers optimum accelerate
+pip install git+https://github.com/imayhaveborkedit/discord-ext-voice-recv
+pip install pydub
 pip install deepfilternet
 ```
 

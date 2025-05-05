@@ -8,8 +8,6 @@ import logging
 import os
 import speech_recognition as sr
 from typing import Any, Callable, Optional
-import whisper
-from faster_whisper import WhisperModel
 import tempfile
 
 from transformers import pipeline
@@ -36,6 +34,13 @@ SRProcessDataCB = Callable[[sr.Recognizer, sr.AudioData, discord.User], Optional
 SRTextCB = Callable[[discord.User, str], Any]
 
 from pydub import AudioSegment
+from df import enhance, init_df
+from df.enhance import load_audio, save_audio
+import warnings
+warnings.filterwarnings("ignore")
+
+
+model, df_state, _ = init_df()
 
 def is_silent_dbfs(audio_data: sr.AudioData, dbfs_threshold: float = -45.0) -> bool:
     # Convert audio data to WAV for pydub
@@ -46,7 +51,6 @@ def is_silent_dbfs(audio_data: sr.AudioData, dbfs_threshold: float = -45.0) -> b
         channels=1
     )
     return sound.dBFS < dbfs_threshold
-
 
 class MySink(voice_recv.extras.SpeechRecognitionSink):
     def get_default_process_callback(self) -> SRProcessDataCB:
@@ -59,14 +63,22 @@ class MySink(voice_recv.extras.SpeechRecognitionSink):
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
                     temp_wav.write(audio.get_wav_data())
                     temp_wav_path = temp_wav.name
+                audio, _ = load_audio(temp_wav_path, sr=df_state.sr())
+                # Denoise the audio
+                enhanced = enhance(model, df_state, audio)
+                save_audio(temp_wav_path, enhanced, df_state.sr())
+
+                if AudioSegment.from_file(temp_wav_path, format="wav").dBFS < -45.0:
+                    print("Audio is silent, skipping transcription.")
+                    return None
 
                 # Transcribe the audio using Transformers Pipeline for ASR
                 result = pipe(temp_wav_path, 
-                            #   chunk_length_s=30, 
+                              chunk_length_s=5, 
                               batch_size=24, 
                               return_timestamps=True,
+                              max_new_tokens=256,
                               generate_kwargs={"language": "en"})
-                
                 return result["text"]
 
             except Exception as e:
