@@ -1,0 +1,124 @@
+import logging
+import os
+import torch
+from transformers import pipeline
+from transformers.utils import is_flash_attn_2_available
+import glob
+from kokoro import KPipeline
+import pyrubberband as pyrb
+import soundfile as sf
+import tempfile
+import discord
+from discord.ext import voice_recv
+from pydub import AudioSegment
+import speech_recognition as sr
+from df import enhance, init_df
+from df.enhance import load_audio, save_audio
+from typing import Any, Callable, Optional
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s\t%(filename)s - %(message)s")
+
+SRProcessDataCB = Callable[[sr.Recognizer, sr.AudioData, discord.User], Optional[str]]
+SRTextCB = Callable[[discord.User, str], Any]
+
+
+class AudioTools:
+    def __init__(self, audio_root: str = "./audio"):
+        self.audio_root = audio_root
+        if not os.path.exists(self.audio_root):
+            os.makedirs(self.audio_root)
+        self.pipe = pipeline(
+            "automatic-speech-recognition",
+            model="openai/whisper-large-v3-turbo",  # select checkpoint from https://huggingface.co/openai/whisper-large-v3#model-details
+            torch_dtype=torch.float32,
+            device="cuda:0",  # or mps for Mac devices
+            model_kwargs={"attn_implementation": "flash_attention_2"}
+            if is_flash_attn_2_available()
+            else {"attn_implementation": "sdpa"},
+        )
+        self.tts = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
+        model, df_state, _ = init_df()
+        self.df_noise_suppression_model = model
+        self.df_state = df_state
+
+    def transcribe(self, audio_file: str):
+        file_check = glob.glob(audio_file)
+        if not file_check:
+            raise FileNotFoundError("Provided file does not exist.")
+        # Transcribe the audio using Transformers Pipeline for ASR
+        result = self.pipe(
+            audio_file,
+            chunk_length_s=10,
+            batch_size=24,
+            return_timestamps=True,
+            max_new_tokens=256,
+            generate_kwargs={"language": "en"},
+        )
+
+        return result["text"]  # Get the transcribed text and strip any leading/trailing whitespace
+
+    def text_to_speech(self, text: str):
+        rate = 24000
+        generator = self.tts(text, voice="af_heart")
+        for i, (gs, ps, audio) in enumerate(generator):
+            max_i = i
+            audio = audio.numpy()
+            audio = pyrb.time_stretch(audio, rate, 0.95)
+            audio = pyrb.pitch_shift(audio, rate, n_steps=3)
+            sf.write(f"{self.audio_root}/{i}.wav", audio, rate)
+        return max_i
+
+    class StreamSink(voice_recv.extras.SpeechRecognitionSink):
+        def __init__(self, outer_instance: "AudioTools"):
+            self._outer_instance = outer_instance
+            super().__init__(default_recognizer="whisper")
+
+        def is_silent_dbfs(self, audio_data: sr.AudioData, dbfs_threshold: float = -45.0) -> bool:
+            # Convert audio data to WAV for pydub
+            sound = AudioSegment(
+                data=audio_data.get_raw_data(),
+                sample_width=audio_data.sample_width,
+                frame_rate=audio_data.sample_rate,
+                channels=1,
+            )
+            return sound.dBFS < dbfs_threshold
+
+        def get_default_process_callback(self) -> SRProcessDataCB:
+            def cb(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[discord.User]) -> Optional[str]:
+                if self.is_silent_dbfs(audio):
+                    return None
+                try:
+                    # Create a temporary WAV file from the AudioData
+                    audio.get_raw_data()
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
+                        temp_wav.write(audio.get_wav_data())
+                        temp_wav_path = temp_wav.name
+                    # apply noise suppression to audio
+                    audio, _ = load_audio(temp_wav_path, sr=self._outer_instance.df_state.sr())
+                    # Denoise the audio
+                    enhanced = enhance(
+                        self._outer_instance.df_noise_suppression_model, self._outer_instance.df_state, audio
+                    )
+                    save_audio(temp_wav_path, enhanced, self._outer_instance.df_state.sr())
+                    # avoid transcribing silent audio because whisper will hallucinate
+                    if AudioSegment.from_file(temp_wav_path, format="wav").dBFS < -45.0:
+                        print("Audio is silent, skipping transcription.")
+                        return None
+                    result = self._outer_instance.transcribe(temp_wav_path)
+                    return result
+                except Exception as e:
+                    logging.exception("Error during transcription: %s", e)
+                    return None
+                finally:
+                    # Clean up the temporary file
+                    if os.path.exists(temp_wav_path):
+                        os.remove(temp_wav_path)
+
+            return cb
+
+        def get_default_text_callback(self) -> SRTextCB:
+            def cb(user: Optional[discord.User], text: Optional[str]) -> Any:
+                if text:
+                    logging.info("%s said: %s", user.display_name if user else "Someone", text)
+
+            return cb
