@@ -14,21 +14,19 @@ import os
 
 from graph.graph import Graph
 
-discord.opus._load_default()
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="$", intents=intents)
 
 # start with one channel for now
 # connections = {}
-vclient = None
-recording_connections = {}
+connections = {}
+can_speak = {}
 
 model = ChatOllama(model="llama3.2:3b", temperature=0.5)
 
 # load kokoro voice
 pipeline = KPipeline(lang_code="a", device="cpu")
-can_speak = True
 audio_root = "./audio"
 if not os.path.exists(audio_root):
     os.makedirs(audio_root)
@@ -58,36 +56,40 @@ async def on_message(message):
 
 @bot.command()
 async def join(ctx: commands.Context):
-    global vclient
     channel = ctx.author.voice.channel
     if channel is None:
         await ctx.send("join a vc first")
         return
-    vclient = await channel.connect()
+    connections[ctx.guild.id] = await channel.connect()
+    can_speak[ctx.guild.id] = True
 
 
 @bot.command()
 async def leave(ctx: commands.Context):
-    global vclient
     if ctx.voice_client is not None:
         await ctx.voice_client.disconnect()
-        vclient = None
+        del connections[ctx.guild.id]
+        del can_speak[ctx.guild.id]
 
 
 @bot.command()
 async def filter(ctx: commands.Context):
-    await filter_speak(vclient)
+    await filter_speak(ctx)
 
 
 @bot.command()
 async def invoke(ctx: commands.Context, *, text: str):
     response = await graph.invoke_model_with_human_messages(
         [HumanMessage(content=f"{ctx.author.name}: {text}")],
-        _vclient=vclient,
+        _ctx=ctx,
         _tts_callback=speak,
         _stop_audio_callback=filter_speak,
     )
-    await ctx.send(response["response"])
+    # await ctx.send(response["response"])
+    print(response["response"])
+    for message in response["messages"]:
+        message.pretty_print()
+    await ctx.send("response sent")
 
 
 # SERVICE FUNCTIONS
@@ -111,23 +113,22 @@ async def text_to_audio_segments(text: str):
     return max_i
 
 
-async def speak(vclient, text: str):
-    global can_speak
+async def speak(ctx, text: str):
     i = await text_to_audio_segments(text)
     for j in range(i + 1):
-        if not can_speak:
+        if not can_speak[ctx.guild.id]:
             break
-        await play_audio(vclient, f"{audio_root}/{j}.wav")
-    if not can_speak:
+        await play_audio(connections[ctx.guild.id], f"{audio_root}/{j}.wav")
+    if not can_speak[ctx.guild.id]:
         i = await text_to_audio_segments("Filtered")
         for j in range(i + 1):
-            await play_audio(vclient, f"{audio_root}/{j}.wav")
-        can_speak = True
+            await play_audio(connections[ctx.guild.id], f"{audio_root}/{j}.wav")
+        can_speak[ctx.guild.id] = True
 
 
-async def filter_speak(vclient):
-    global can_speak
-    can_speak = False
+async def filter_speak(ctx):
+    vclient = connections[ctx.guild.id]
+    can_speak[ctx.guild.id] = False
     if vclient.is_playing():
         vclient.stop()
 
