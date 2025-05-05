@@ -1,16 +1,18 @@
 # 🌸 Nulli QuAD Bot
 
-> A Discord-native AI assistant that blends seamlessly into voice chats — no awkward bots allowed.
+> A Discord-native AI chatbot that blends seamlessly into voice chats — no awkward bots allowed.
 
 <p align="center">
-  <img src="./assets/nulli.png" alt="Nulli Icon" width="120" height="120">
+  <img src="./assets/Nulliv2.png" alt="Nulli Icon" width="253" height="320">
 </p>
 
 ---
 
 ## ✨ Project Overview
 
-**Authors:** Adrian Munoz, Daniel Nguyen, Quan Pham
+**Developers:** Quan Pham, Adrian Munoz, Daniel Nguyen
+
+**Nulli Artist:** Aendri
 
 Nulli is an AI-powered Discord bot built for natural, real-time voice interaction. Designed for seamless integration into group calls, Nulli can speak, listen, transcribe, and even learn over time — all while feeling like just another user in the chat.
 
