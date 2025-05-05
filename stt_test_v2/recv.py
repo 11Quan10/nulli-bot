@@ -20,8 +20,8 @@ import torch
 # model = WhisperModel("whisper-turbo-ct2", device="cuda", compute_type="float32", local_files_only=True)  # Use "cpu" if CUDA is unavailable
 pipe = pipeline(
     task="automatic-speech-recognition",
-    model="openai/whisper-large-v3",        # check out more models at: https://huggingface.co/models?pipeline_tag=automatic-speech-recognition
-    torch_dtype=torch.float16,
+    model="openai/whisper-large-v3-turbo",        # check out more models at: https://huggingface.co/models?pipeline_tag=automatic-speech-recognition
+    torch_dtype=torch.float32,
     device="cuda:0",  # or mps for Mac devices
     model_kwargs={"attn_implementation": "flash_attention_2"}
     if is_flash_attn_2_available()
@@ -30,7 +30,7 @@ pipe = pipeline(
 
 discord.opus._load_default()
 bot = commands.Bot(command_prefix="$", intents=discord.Intents.all())
-log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s\t%(filename)s - %(message)s')
 
 SRProcessDataCB = Callable[[sr.Recognizer, sr.AudioData, discord.User], Optional[str]]
 SRTextCB = Callable[[discord.User, str], Any]
@@ -60,17 +60,17 @@ class MySink(voice_recv.extras.SpeechRecognitionSink):
                     temp_wav.write(audio.get_wav_data())
                     temp_wav_path = temp_wav.name
 
-                # Transcribe the audio using faster-whisper
+                # Transcribe the audio using Transformers Pipeline for ASR
                 result = pipe(temp_wav_path, 
                             #   chunk_length_s=30, 
                               batch_size=24, 
                               return_timestamps=True,
                               generate_kwargs={"language": "en"})
-
+                
                 return result["text"]
 
             except Exception as e:
-                log.exception("Error during transcription: %s", e)
+                logging.exception("Error during transcription: %s", e)
                 return None
 
             finally:
@@ -80,14 +80,12 @@ class MySink(voice_recv.extras.SpeechRecognitionSink):
 
         return cb
     
-    # def get_default_text_callback(self) -> SRTextCB:
-    #     def cb(user: Optional[discord.User], text: Optional[str]) -> Any:
-    #         if text is None or len(text) == 0:
-    #             log.info("Empty text")
-    #             return
-    #         log.info("%s said: %s", user.display_name if user else 'Someone', text)
+    def get_default_text_callback(self) -> SRTextCB:
+        def cb(user: Optional[discord.User], text: Optional[str]) -> Any:
+            if text:
+                logging.info("%s said: %s", user.display_name if user else 'Someone', text)
 
-    #     return cb
+        return cb
 
 class Testing(commands.Cog):
     def __init__(self, bot):
