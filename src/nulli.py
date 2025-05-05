@@ -81,7 +81,7 @@ async def filter(ctx: commands.Context):
 async def invoke(ctx: commands.Context, *, text: str):
     response = await graph.invoke_model_with_human_messages(
         [HumanMessage(content=f"{ctx.author.name}: {text}")],
-        _vclient=connections[ctx.guild.id],
+        _ctx=ctx,
         _tts_callback=speak,
         _stop_audio_callback=filter_speak,
     )
