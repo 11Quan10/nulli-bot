@@ -12,38 +12,47 @@ import whisper
 from faster_whisper import WhisperModel
 import tempfile
 
+from transformers import pipeline
+from transformers.utils import is_flash_attn_2_available
+import torch
+
 # Initialize the model with desired parameters
-model = WhisperModel("whisper-turbo-ct2", device="cuda", compute_type="float32", local_files_only=True)  # Use "cpu" if CUDA is unavailable
+# model = WhisperModel("whisper-turbo-ct2", device="cuda", compute_type="float32", local_files_only=True)  # Use "cpu" if CUDA is unavailable
+pipe = pipeline(
+    task="automatic-speech-recognition",
+    model="openai/whisper-large-v3",        # check out more models at: https://huggingface.co/models?pipeline_tag=automatic-speech-recognition
+    torch_dtype=torch.float16,
+    device="cuda:0",  # or mps for Mac devices
+    model_kwargs={"attn_implementation": "flash_attention_2"}
+    if is_flash_attn_2_available()
+    else {"attn_implementation": "sdpa"},
+)
 
 discord.opus._load_default()
-
 bot = commands.Bot(command_prefix="$", intents=discord.Intents.all())
 log = logging.getLogger(__name__)
 
 SRProcessDataCB = Callable[[sr.Recognizer, sr.AudioData, discord.User], Optional[str]]
 SRTextCB = Callable[[discord.User, str], Any]
 
+from pydub import AudioSegment
+
+def is_silent_dbfs(audio_data: sr.AudioData, dbfs_threshold: float = -45.0) -> bool:
+    # Convert audio data to WAV for pydub
+    sound = AudioSegment(
+        data=audio_data.get_raw_data(),
+        sample_width=audio_data.sample_width,
+        frame_rate=audio_data.sample_rate,
+        channels=1
+    )
+    return sound.dBFS < dbfs_threshold
+
+
 class MySink(voice_recv.extras.SpeechRecognitionSink):
     def get_default_process_callback(self) -> SRProcessDataCB:
         def cb(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[discord.User]) -> Optional[str]:
-            # log.debug("Got %s, %s, %s", audio, audio.sample_rate, audio.sample_width)
-            # text: Optional[str] = None
-            # try:
-            #     if self.default_recognizer == 'whisper':
-            #         text = recognizer.recognize_whisper(
-            #             audio,
-            #             model="small",       # change to "tiny", "base", "medium", "large" as needed
-            #             language="en"        # force English
-            #         )
-            #     else:
-            #         print(type(self.default_recognizer))
-            #         func = getattr(recognizer, 'recognize_' + self.default_recognizer, recognizer.recognize_google)  # type: ignore
-            #         text = func(audio)  # type: ignore
-            # except sr.UnknownValueError:
-            #     log.debug("Bad speech chunk")
-            #     # self._debug_audio_chunk(audio)
-
-            # return text
+            if is_silent_dbfs(audio):
+                return None
 
             try:
                 # Create a temporary WAV file from the AudioData
@@ -52,12 +61,13 @@ class MySink(voice_recv.extras.SpeechRecognitionSink):
                     temp_wav_path = temp_wav.name
 
                 # Transcribe the audio using faster-whisper
-                segments, _ = model.transcribe(temp_wav_path, language="en", beam_size=5)
+                result = pipe(temp_wav_path, 
+                            #   chunk_length_s=30, 
+                              batch_size=24, 
+                              return_timestamps=True,
+                              generate_kwargs={"language": "en"})
 
-                # Combine transcribed segments into a single string
-                transcription = " ".join(segment.text for segment in segments)
-
-                return transcription.strip()
+                return result["text"]
 
             except Exception as e:
                 log.exception("Error during transcription: %s", e)
@@ -72,6 +82,9 @@ class MySink(voice_recv.extras.SpeechRecognitionSink):
     
     # def get_default_text_callback(self) -> SRTextCB:
     #     def cb(user: Optional[discord.User], text: Optional[str]) -> Any:
+    #         if text is None or len(text) == 0:
+    #             log.info("Empty text")
+    #             return
     #         log.info("%s said: %s", user.display_name if user else 'Someone', text)
 
     #     return cb

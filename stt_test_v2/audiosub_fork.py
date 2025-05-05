@@ -23,7 +23,11 @@ class AudioSub:
         if not file_check:
             raise FileNotFoundError("Provided file does not exist.")
 
-        result = self.pipe(audio_file, chunk_length_s=30, batch_size=24, return_timestamps=True)
+        result = self.pipe(audio_file, 
+                           chunk_length_s=30, 
+                           batch_size=24, 
+                           return_timestamps=True,
+                           generate_kwargs={"language": "en"})
 
         return result["text"]  # Get the transcribed text and strip any leading/trailing whitespace
     
