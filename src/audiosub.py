@@ -5,9 +5,9 @@ import glob
 from kokoro import KPipeline
 import soundfile as sf
 
+
 class AudioSub:
-    def __init__(self, audio_path: str):
-        self.audio_path = audio_path
+    def __init__(self):
         self.pipe = pipeline(
             "automatic-speech-recognition",
             model="openai/whisper-large-v3-turbo",  # select checkpoint from https://huggingface.co/openai/whisper-large-v3#model-details
@@ -19,20 +19,17 @@ class AudioSub:
         )
         self.tts = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
 
-    def transcribe(self):
-        audio_files = glob.glob(self.audio_path + "\\*.wav")
-        if not audio_files:
-            raise FileNotFoundError("No audio files found in the specified directory.")
+    def transcribe(self, audio_file: str):
+        file_check = glob.glob(audio_file)
+        if not file_check:
+            raise FileNotFoundError("Provided file does not exist.")
 
-        transcriptions = []
-        for audio_file in audio_files:
-            result = self.pipe(audio_file, chunk_length_s=30, batch_size=24, return_timestamps=True)
+        result = self.pipe(
+            audio_file, chunk_length_s=30, batch_size=24, return_timestamps=True, generate_kwargs={"language": "en"}
+        )
 
-            text = result["text"]  # Get the transcribed text and strip any leading/trailing whitespace
-            transcriptions.append(text)
+        return result["text"]  # Get the transcribed text and strip any leading/trailing whitespace
 
-        return "\n".join(transcriptions)
-    
     def text_to_speech(self, text: str, output_path: str):
         generator = self.tts(text, voice="jf_alpha")
         for i, (gs, ps, audio) in enumerate(generator):
