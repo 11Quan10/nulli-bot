@@ -130,8 +130,6 @@ async def connection_event_loop(connection: Connection):
                     ctx_guild_id=connection["ctx_guild_id"],
                     messages=[HumanMessage(content=f"{chunk[0]}: {chunk[2]}") for chunk in processed_transcriptions],
                 )
-                connection["start_time_no_one_speaking"] = -1
-                connection["responding"] = False
         await asyncio.sleep(2)
 
 
@@ -210,6 +208,9 @@ async def speak(ctx_guild_id: int, text: str):
         for j in range(i + 1):
             await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
         connections[ctx_guild_id]["can_speak"] = True
+
+    connections[ctx_guild_id]["start_time_no_one_speaking"] = -1
+    connections[ctx_guild_id]["responding"] = False
 
 
 async def filter_speak(ctx_guild_id):
