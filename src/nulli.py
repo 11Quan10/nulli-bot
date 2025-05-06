@@ -94,7 +94,7 @@ async def leave(ctx: commands.Context):
         connections[ctx.guild.id]["voice_client"].stop_listening()
         connections[ctx.guild.id]["voice_client"].stop()
         connections[ctx.guild.id]["voice_client"].cleanup()
-        connections[ctx.guild.id]["voice_client"].disconnect()
+        await connections[ctx.guild.id]["voice_client"].disconnect()
         if os.path.exists(connections[ctx.guild.id]["audio_tempfile"]):
             os.removedirs(connections[ctx.guild.id]["audio_tempfile"])
         del connections[ctx.guild.id]
