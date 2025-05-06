@@ -98,6 +98,7 @@ async def leave(ctx: commands.Context):
         if os.path.exists(connections[ctx.guild.id]["audio_tempfile"]):
             os.removedirs(connections[ctx.guild.id]["audio_tempfile"])
         del connections[ctx.guild.id]
+        await ctx.bot.close()
 
 
 # EVENT LOOP
