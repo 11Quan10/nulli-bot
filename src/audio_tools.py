@@ -72,7 +72,10 @@ class AudioTools:
         return max_i
 
     async def prepend_silence(self, audio_file: str, silence_duration_ms: float, output_file: str):
-        audio = AudioSegment.from_file(audio_file)
+        try:
+            audio = AudioSegment.from_file(audio_file)
+        except Exception as e:
+            return audio_file
         silence = AudioSegment.silent(duration=silence_duration_ms)
         combined = silence + audio
         combined.export(output_file, format="wav")

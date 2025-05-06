@@ -147,10 +147,17 @@ async def connection_event_loop(connection: Connection):
 async def process_audio_batch(users_audio_files):
     # need to make all audio files the same length
     max_frame_size = 0
-    for file in users_audio_files.values():
-        audio = AudioSegment.from_file(file, format="wav")
+    file_corrupted_users = []
+    for user in users_audio_files.keys():
+        try:  # file may be corrupted
+            audio = AudioSegment.from_file(users_audio_files[user], format="wav")
+        except Exception as e:
+            file_corrupted_users.append(user)
+            continue
         if len(audio) > max_frame_size:
             max_frame_size = len(audio)
+    for user in file_corrupted_users:
+        del users_audio_files[user]
     for file in users_audio_files.values():
         await audio_tools.prepend_silence(file, max_frame_size - len(AudioSegment.from_file(file, format="wav")), file)
     user_transcriptions_full = {}
