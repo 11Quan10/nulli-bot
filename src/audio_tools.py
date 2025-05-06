@@ -47,6 +47,18 @@ class AudioTools:
         if not file_check:
             raise FileNotFoundError("Provided file does not exist.")
         # Transcribe the audio using Transformers Pipeline for ASR
+
+        audio, _ = load_audio(audio_file, sr=self._outer_instance.df_state.sr())
+        # Denoise the audio
+        enhanced = enhance(
+            self._outer_instance.df_noise_suppression_model, self._outer_instance.df_state, audio
+        )
+        save_audio(audio_file, enhanced, self._outer_instance.df_state.sr())
+        # avoid transcribing silent audio because whisper will hallucinate
+        if AudioSegment.from_file(audio_file, format="wav").dBFS < -45.0:
+            print("Audio is silent, skipping transcription.")
+            return None
+
         result = self.pipe(
             audio_file,
             chunk_length_s=10,

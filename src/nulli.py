@@ -128,6 +128,7 @@ async def connection_event_loop(connection: Connection):
                         users_audio_files[member.name] = f"{connection['audio_tempfile']}/{member.name}.wav"
                 print("Processing audio files...")
                 processed_transcriptions = await process_audio_batch(users_audio_files=users_audio_files)
+                print(processed_transcriptions)
                 print("Responding...")
                 await invoke(
                     ctx_guild_id=connection["ctx_guild_id"],
@@ -162,6 +163,7 @@ async def process_audio_batch(users_audio_files):
         (user, chunk["timestamp"][0], chunk["text"])
         for user in user_transcriptions_full.keys()
         for chunk in user_transcriptions_full[user]["chunks"]
+        if user_transcriptions_full[user]
     ]
     # sort the chunks by timestamp
     chunks.sort(key=lambda x: x[1])
