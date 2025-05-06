@@ -109,6 +109,7 @@ async def connection_event_loop(connection: Connection):
         if connection["connection_flag"] is False:
             break
         if connection["responding"]:
+            await asyncio.sleep(2)
             continue
         print("Checking for speaking users...")
         speaking_flag = False
@@ -201,16 +202,20 @@ async def play_audio(vclient, filename: str):
 async def speak(ctx_guild_id: int, text: str):
     print("Speaking...")
     i = await audio_tools.text_to_speech(text)
-    print(f"{audio_tools.audio_root}/{i}.wav")
-    print(connections[ctx_guild_id]["can_speak"])
-    for j in range(i + 1):
-        if not connections[ctx_guild_id]["can_speak"]:
-            break
-        await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
-    if not connections[ctx_guild_id]["can_speak"]:
-        i = await audio_tools.text_to_speech("Filtered")
+    if i != -1:
+        print(f"{audio_tools.audio_root}/{i}.wav")
+        print(connections[ctx_guild_id]["can_speak"])
         for j in range(i + 1):
+            if not connections[ctx_guild_id]["can_speak"]:
+                break
             await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
+        if not connections[ctx_guild_id]["can_speak"]:
+            i = await audio_tools.text_to_speech("Filtered")
+            if i != -1:
+                for j in range(i + 1):
+                    await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
+            connections[ctx_guild_id]["can_speak"] = True
+    else:
         connections[ctx_guild_id]["can_speak"] = True
 
     connections[ctx_guild_id]["start_time_no_one_speaking"] = -1

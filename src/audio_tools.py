@@ -61,6 +61,7 @@ class AudioTools:
     async def text_to_speech(self, text: str):
         rate = 24000
         generator = self.tts(text, voice="af_heart")
+        max_i = -1
         for i, (gs, ps, audio) in enumerate(generator):
             max_i = i
             audio = audio.numpy()
