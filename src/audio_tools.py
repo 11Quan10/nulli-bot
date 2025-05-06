@@ -7,9 +7,7 @@ import glob
 from kokoro import KPipeline
 import pyrubberband as pyrb
 import soundfile as sf
-import tempfile
 import discord
-from discord.ext import voice_recv
 from discord.ext.voice_recv.sinks import AudioSink
 from discord.ext.voice_recv.opus import VoiceData, Decoder as OpusDecoder
 import wave
@@ -145,7 +143,7 @@ class WaveSinkMultipleUsers(AudioSink):
 
     def __init__(self, destination: str):
         super().__init__()
-        self._base_file = destination
+        self._base_folder = destination
         self.users: dict[discord.User, wave.Wave_write] = {}
 
     def wants_opus(self) -> bool:
@@ -153,7 +151,7 @@ class WaveSinkMultipleUsers(AudioSink):
 
     def write(self, user: Optional[discord.User], data: VoiceData) -> None:
         if user not in self.users:
-            self.users[user] = wave.open(f"{self._base_file}_{user.name}.wav", "wb")
+            self.users[user] = wave.open(f"{self._base_folder}/{user.name}.wav", "wb")
             self.users[user].setnchannels(self.CHANNELS)
             self.users[user].setsampwidth(self.SAMPLE_WIDTH)
             self.users[user].setframerate(self.SAMPLING_RATE)

@@ -1,4 +1,6 @@
 import asyncio
+import codecs
+import os
 import re
 import time
 from langsmith import traceable
@@ -18,6 +20,15 @@ from graph.chains.filter import FilterChain
 import base64
 from urllib.request import Request, urlopen
 
+# load filtered words from encrypted txt
+if os.path.exists("../regex_filters/bad_words.txt"):
+    with open("../regex_filters/bad_words.txt", "r") as file:
+        content = codecs.encode(file.read(), "rot13")
+    filtered_words = [word.strip() for word in content.split(",")]
+    filter_pattern = re.compile(r"\b(" + "|".join(filtered_words) + r")\b", flags=re.IGNORECASE)
+else:
+    filter_pattern = re.compile(r"(?!)")
+
 
 class AgentState(TypedDict):
     # The add_messages function defines how an update should be processed
@@ -28,6 +39,7 @@ class AgentState(TypedDict):
     new_summary: str
     memory: str
     response: str
+    response_prefiltered: str
     start_time: float
     response_time: float
 
@@ -93,21 +105,39 @@ class Graph:
                     *state["context"],
                 ]
             )
+            response_prefiltered = response
             # filter out action indicators from response
             response = re.sub(r"\*[^*]+\*", "", response).strip()
             response = re.sub(r"\:[^:]+\:", "", response).strip()
             response = re.sub(r"\([^)]*\)", "", response).strip()
 
-            # play text as audio
-            if state["ctx_guild_id"] is not None and state["tts_callback"] is not None:
-                asyncio.create_task(state["tts_callback"](state["ctx_guild_id"], response))
             return {
                 "response": response,
+                "response_prefiltered": response_prefiltered,
                 "messages": [AIMessage(content=response, id="Response")],
                 "response_time": time.time(),
             }
 
-        async def filter_response(state):
+        async def filter_response_regex(state):
+            match = filter_pattern.search(state["response"])
+            if match:
+                
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"Response contains filtered words: {match.group()}. Response={state['response']}",
+                            id="Filter Regex BAD",
+                        )
+                    ]
+                }
+            # play text as audio
+            if state["ctx_guild_id"] is not None and state["tts_callback"] is not None:
+                asyncio.create_task(state["tts_callback"](state["ctx_guild_id"], state["response"]))
+            return {
+                "messages": [AIMessage(content=f"Response is safe. Response={state['response']}", id="Filter Regex OK")]
+            }
+
+        async def filter_response_llm(state):
             filter_result = await filter_chain.filter_chain.ainvoke(state["response"])
             if filter_result["safe"]:
                 return {
@@ -129,14 +159,16 @@ class Graph:
         workflow = StateGraph(AgentState)
         workflow.add_node("iteratively_summarize", iteratively_summarize)
         workflow.add_node("respond", respond)
-        workflow.add_node("filter_response", filter_response)
+        workflow.add_node("filter_response_regex", filter_response_regex)
+        workflow.add_node("filter_response_llm", filter_response_llm)
         workflow.add_node("retrieve", retrieve)
 
         workflow.add_edge(START, "iteratively_summarize")
         workflow.add_edge(START, "retrieve")
         workflow.add_edge(["retrieve"], "respond")
-        workflow.add_edge("respond", "filter_response")
-        workflow.add_edge("filter_response", END)
+        workflow.add_edge(["respond"], "filter_response_regex")
+        workflow.add_edge(["filter_response_regex"], "filter_response_llm")
+        workflow.add_edge("filter_response_llm", END)
         self.graph = workflow.compile()
 
     def _save_graph_as_png(self):

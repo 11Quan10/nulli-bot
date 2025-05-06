@@ -1,10 +1,9 @@
 import asyncio
+import re
 import time
 from typing import Dict, TypedDict
 from audio_tools import AudioTools, WaveSinkMultipleUsers
 from discord.ext.voice_recv import SilenceGeneratorSink
-import codecs
-import re
 import torch
 import discord
 from discord.ext import commands, voice_recv
@@ -13,7 +12,6 @@ from langchain_core.messages import HumanMessage
 import os
 from graph.graph import Graph
 import warnings
-import tempfile
 from pydub import AudioSegment
 
 warnings.filterwarnings("ignore")
@@ -25,15 +23,6 @@ discord.opus._load_default()
 bot = commands.Bot(command_prefix="$", intents=discord.Intents.all())
 
 audio_tools = AudioTools()
-
-# load filtered words from encrypted txt
-if os.path.exists("bad_words.txt"):
-    with open("bad_words.txt", "r") as file:
-        content = codecs.encode(file.read(), "rot13")
-    filtered_words = [word.strip() for word in content.split(",")]
-    filter_pattern = re.compile(r"\b(" + "|".join(filtered_words) + r")\b", flags=re.IGNORECASE)
-else:
-    filter_pattern = re.compile(r"(?!)")
 
 graph = Graph()
 
@@ -80,13 +69,15 @@ async def join(ctx: commands.Context):
         await ctx.send("join a vc first")
         return
     vclient = await channel.connect(cls=voice_recv.VoiceRecvClient)
+    if not os.path.exists(f"{audio_tools.audio_root}/{ctx.guild.id}"):
+        os.makedirs(f"{audio_tools.audio_root}/{ctx.guild.id}")
     connections[ctx.guild.id] = Connection(
         ctx_guild_id=ctx.guild.id,
         voice_client=vclient,
         connection_flag=True,
         can_speak=True,
         start_time_no_one_speaking=-1,
-        audio_tempfile="./audio/audio_tempfile",
+        audio_tempfile=f"{audio_tools.audio_root}/{ctx.guild.id}",
         responding=False,
     )
 
@@ -104,7 +95,6 @@ async def leave(ctx: commands.Context):
         connections[ctx.guild.id]["voice_client"].stop()
         connections[ctx.guild.id]["voice_client"].cleanup()
         connections[ctx.guild.id]["voice_client"].disconnect()
-        connections[ctx.guild.id]["audio_tempfile"].close()
         if os.path.exists(connections[ctx.guild.id]["audio_tempfile"]):
             os.remove(connections[ctx.guild.id]["audio_tempfile"])
         del connections[ctx.guild.id]
@@ -130,8 +120,8 @@ async def connection_event_loop(connection: Connection):
                 user_list = connection["voice_client"].channel.members
                 users_audio_files = {}
                 for member in user_list:
-                    if os.path.exists(f"{connection['audio_tempfile']}_{member.name}.wav"):
-                        users_audio_files[member.name] = f"{connection['audio_tempfile']}_{member.name}.wav"
+                    if os.path.exists(f"{connection['audio_tempfile']}/{member.name}.wav"):
+                        users_audio_files[member.name] = f"{connection['audio_tempfile']}/{member.name}.wav"
                 print("Processing audio files...")
                 processed_transcriptions = await process_audio_batch(users_audio_files=users_audio_files)
                 print("Responding...")
@@ -141,7 +131,7 @@ async def connection_event_loop(connection: Connection):
                 )
                 connection["start_time_no_one_speaking"] = -1
                 connection["responding"] = False
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
 
 
 async def process_audio_batch(users_audio_files):
@@ -171,6 +161,13 @@ async def process_audio_batch(users_audio_files):
     ]
     # sort the chunks by timestamp
     chunks.sort(key=lambda x: x[1])
+    # regex to replace mispoken words for "nulli"
+    for i in range(len(chunks)):
+        chunks[i] = (
+            chunks[i][0],
+            chunks[i][1],
+            re.sub(r"\b(?:N[uo]l{1,2}[iey\-]{1,3})\b", "Nulli", chunks[i][2], flags=re.IGNORECASE),
+        )
 
     return chunks
 
@@ -188,8 +185,6 @@ async def invoke(ctx_guild_id, messages: list[HumanMessage]):
     print(response["response"])
     for message in messages:
         message.pretty_print()
-    # for message in response["messages"]:
-    #     message.pretty_print()
 
 
 async def play_audio(vclient, filename: str):
@@ -200,15 +195,11 @@ async def play_audio(vclient, filename: str):
         await asyncio.sleep(0.1)
 
 
-async def filter_regex(text: str):
-    match = filter_pattern.search(text)
-    if match:
-        return match.group()
-    return None
-
-
 async def speak(ctx_guild_id: int, text: str):
+    print("Speaking...")
     i = await audio_tools.text_to_speech(text)
+    print(f"{audio_tools.audio_root}/{i}.wav")
+    print(connections[ctx_guild_id]["can_speak"])
     for j in range(i + 1):
         if not connections[ctx_guild_id]["can_speak"]:
             break
@@ -222,7 +213,7 @@ async def speak(ctx_guild_id: int, text: str):
 
 async def filter_speak(ctx_guild_id):
     vclient = connections[ctx_guild_id]["voice_client"]
-    connections[ctx_guild_id]["voice_client"] = False
+    connections[ctx_guild_id]["can_speak"] = False
     if vclient.is_playing():
         vclient.stop()
     return None
