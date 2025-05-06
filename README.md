@@ -101,8 +101,8 @@ We found areas in our pipeline that would be useful to be parallelize. Therefore
 ### Whisper: Real-time or Batch Processing?
 
 - After experimenting with using Whisper audio transcription in real-time vs via batch processing, we have decided it is much faster, less GPU intensive, and better quality to do batch processing.
-  - With real-time processing, our pipeline starts to slow down and we start losing audio packets quickly since our threaded code cannot keep up with each Whisper transcription. Additionally, Whisper will halluncinate more since we are sending shorter audio which may be mostly silent, affecting the quality of the input to the core LLM.
-  - With batch processing, Whisper is more likely to not halluncinate since the audio files are longer and are expected to have coherent audio. Additionally, with significantly less Whisper calls, our voice channel connection loop is faster and is able to respond to Discord's connection heartbeat in time.
+  - With real-time processing, our pipeline starts to slow down and we start losing audio packets quickly since our threaded code cannot keep up with each Whisper transcription. Additionally, Whisper will hallucinate more since we are sending shorter audio which may be mostly silent, affecting the quality of the input to the core LLM.
+  - With batch processing, Whisper is more likely to not hallucinate since the audio files are longer and are expected to have coherent audio. Additionally, with significantly less Whisper calls, our voice channel connection loop is faster and is able to respond to Discord's connection heartbeat in time.
 
 ## Future Works
 
