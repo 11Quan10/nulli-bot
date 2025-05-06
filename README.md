@@ -72,7 +72,7 @@ pip install deepfilternet
 ```bash
 pip install -q "kokoro>=0.9.4" soundfile
 pip install pyrubberband
-pip install misaki[ja]
+pip install misaki[ja]      # could cause an error with visual studio build? 
 python -m unidic download
 ```
 
