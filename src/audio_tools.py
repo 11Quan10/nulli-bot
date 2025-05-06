@@ -168,6 +168,9 @@ class WaveSinkMultipleUsers(AudioSink):
         return False
 
     def write(self, user: Optional[discord.User], data: VoiceData) -> None:
+        if user is None:
+            return
+
         # file might have been deleted from previous invocation
         if not os.path.exists(f"{self._base_folder}/{user.name}.wav"):
             self.users[user] = wave.open(f"{self._base_folder}/{user.name}.wav", "wb")

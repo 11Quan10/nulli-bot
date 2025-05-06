@@ -75,7 +75,7 @@ class Graph:
         # memory = Memory(models.embeddings, models.sparse_embeddings)
         system_prompts = SystemPrompts()
         # search_chain = SearchChain()
-        # iteratively_summarize_chain = IterativelySummarizeChain(model_llm=models.model_llm)
+        iteratively_summarize_chain = IterativelySummarizeChain(model_llm=models.model_llm)
         # retrieve_chain = RetrieveChain(retriever=memory.retriever)
         respond_chain = RespondChain(model_llm=models.model_llm)
         filter_chain = FilterChain(model_guard=models.model_guard)
@@ -86,12 +86,17 @@ class Graph:
             pass
 
         async def iteratively_summarize(state):
-            # summary = await iteratively_summarize_chain.iteratively_summarize_chain.ainvoke(
-            #     {"current_summary": state["current_summary"], "context": state["context"]}
-            # )
-            # self.current_summary = summary
-            # return {"new_summary": summary, "messages": [AIMessage(content=summary, id="2")]}
-            pass
+            summary = await iteratively_summarize_chain.iteratively_summarize_chain.ainvoke(
+                # {"current_summary": state["current_summary"], "context": state["context"]}
+                [
+                  SystemMessage(content=system_prompts.iteratively_summarize_system_prompt),
+                  SystemMessage(content=f"This is the current summary:\n\n{state['current_summary']}"),
+                  SystemMessage(content="This is the most recent conversation"),
+                  *state["context"],
+                ]
+            )
+            self.current_summary = summary
+            return {"new_summary": summary, "messages": [AIMessage(content=summary, id="new_summary")]}
 
         async def retrieve(state):
             # memory = await retrieve_chain.retrieve_chain.ainvoke(state["current_summary"] + " " + state["context"])
@@ -102,6 +107,7 @@ class Graph:
             response = await respond_chain.respond_chain.ainvoke(
                 [
                     SystemMessage(content=system_prompts.respond_system_prompt),
+                    SystemMessage(content=f"This is the current summary:\n\n{state['current_summary']}"),
                     *state["context"],
                 ]
             )
