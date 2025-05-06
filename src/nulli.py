@@ -96,7 +96,7 @@ async def leave(ctx: commands.Context):
         connections[ctx.guild.id]["voice_client"].cleanup()
         connections[ctx.guild.id]["voice_client"].disconnect()
         if os.path.exists(connections[ctx.guild.id]["audio_tempfile"]):
-            os.remove(connections[ctx.guild.id]["audio_tempfile"])
+            os.removedirs(connections[ctx.guild.id]["audio_tempfile"])
         del connections[ctx.guild.id]
 
 
@@ -188,7 +188,7 @@ async def invoke(ctx_guild_id, messages: list[HumanMessage]):
 
 
 async def play_audio(vclient, filename: str):
-    src = discord.FFmpegPCMAudio(source=filename, executable="ffmpeg.exe")
+    src = discord.FFmpegPCMAudio(source=filename, executable="ffmpeg")
     vclient.play(src)
 
     while vclient.is_playing():
