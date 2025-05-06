@@ -1,4 +1,4 @@
-# 🌸 Nulli QuAD Bot
+# 🌸 Nulli Bot
 
 > A Discord-native AI chatbot that blends seamlessly into voice chats — no awkward bots allowed.
 
