@@ -106,7 +106,7 @@ async def leave(ctx: commands.Context):
 
 async def connection_event_loop(connection: Connection):
     while True:
-        if connection["connection_flag"] is False:
+        if connection["responding"] or connection["connection_flag"] is False:
             break
         print("Checking for speaking users...")
         speaking_flag = False
