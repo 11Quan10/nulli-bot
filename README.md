@@ -211,6 +211,10 @@ OLLAMA_HOST=localhost:11435 OLLAMA_KEEP_ALIVE=-1 OLLAMA_FLASH_ATTENTION=1 ollama
 # OLLAMA_HOST=localhost:11436 OLLAMA_KEEP_ALIVE=-1 OLLAMA_FLASH_ATTENTION=1 ollama serve
 ```
 
+## ☁️ Running on Google Colab
+
+We have provided an Jupyter notebook export at ./Nulli_bot_Colab_Export_(public).ipynb that you can put into Google Colab.
+
 ### 🌸 Start Nulli
 
 Make sure you've invited Nulli to your Discord server. Then, from `src/`:
