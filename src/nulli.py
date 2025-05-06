@@ -108,6 +108,7 @@ async def connection_event_loop(connection: Connection):
     while True:
         if connection["connection_flag"] is False:
             break
+        # TODO: recording still happens early... check speak() ?
         if connection["responding"]:
             await asyncio.sleep(2)
             continue
@@ -116,6 +117,7 @@ async def connection_event_loop(connection: Connection):
         for member in connection["voice_client"].channel.members:
             if connection["voice_client"].get_speaking(member):
                 speaking_flag = True
+                # TODO: we can break early here?
         if speaking_flag is False:
             if connection["start_time_no_one_speaking"] == -1:
                 connection["start_time_no_one_speaking"] = time.time()
@@ -124,7 +126,11 @@ async def connection_event_loop(connection: Connection):
                 user_list = connection["voice_client"].channel.members
                 users_audio_files = {}
                 for member in user_list:
-                    if os.path.exists(f"{connection['audio_tempfile']}/{member.name}.wav"):
+                    # ignore the bot from user list
+                    if member == bot.user:
+                        continue
+
+                    if os.path.exists(f"{connection['audio_tempfile']}/{member.name}.wav"):         # TODO?: this particular 'if' might not be necessary?
                         users_audio_files[member.name] = f"{connection['audio_tempfile']}/{member.name}.wav"
                 print("Processing audio files...")
                 processed_transcriptions = await process_audio_batch(users_audio_files=users_audio_files)
@@ -156,7 +162,8 @@ async def process_audio_batch(users_audio_files):
     user_transcriptions_full = {}
     for user in users_audio_files.keys():
         user_transcriptions_full[user] = await audio_tools.transcribe(users_audio_files[user])
-        # os.remove(users_audio_files[user])
+        # delete file upon transcription
+        os.remove(users_audio_files[user])
     #  combines all chunks into a single list of tuples (user, timestamp, text)
     chunks = [
         (user, chunk["timestamp"][0], chunk["text"])

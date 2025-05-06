@@ -49,12 +49,12 @@ class AudioTools:
         # Transcribe the audio using Transformers Pipeline for ASR
 
         try:
-            audio, _ = load_audio(audio_file, sr=self.df_state.sr())
-            # Denoise the audio
-            enhanced = enhance(
-                self.df_noise_suppression_model, self.df_state, audio
-            )
-            save_audio(audio_file, enhanced, self.df_state.sr())
+            # audio, _ = load_audio(audio_file, sr=self.df_state.sr())
+            # # Denoise the audio
+            # enhanced = enhance(
+            #     self.df_noise_suppression_model, self.df_state, audio
+            # )
+            # save_audio(audio_file, enhanced, self.df_state.sr())
             # avoid transcribing silent audio because whisper will hallucinate
             if AudioSegment.from_file(audio_file, format="wav").dBFS < -45.0:
                 print("Audio is silent, skipping transcription.")
@@ -168,7 +168,8 @@ class WaveSinkMultipleUsers(AudioSink):
         return False
 
     def write(self, user: Optional[discord.User], data: VoiceData) -> None:
-        if user not in self.users:
+        # file might have been deleted from previous invocation
+        if not os.path.exists(f"{self._base_folder}/{user.name}.wav"):
             self.users[user] = wave.open(f"{self._base_folder}/{user.name}.wav", "wb")
             self.users[user].setnchannels(self.CHANNELS)
             self.users[user].setsampwidth(self.SAMPLE_WIDTH)
