@@ -119,7 +119,7 @@ To build beyond our minimum viable product, we have identified several key featu
 ### Learning Capabilitiies
 
 - We have experimented with the Qdrant vectorstore for RAG capabilities. Given the proper GPU hardware, we would hope to integrate memory retrieval into Nulli's pipeline.
-  - Additionally, a hybrid approach with a knowledge graph would give better results since we know some of the relations in our information. For example, storing "user1" -- friends --> "user2" or "user1" -- likes --> "league of legends" counter bad queries and irrelevant information to the Qdrant vectorstore.
+  - Additionally, a hybrid approach with a knowledge graph would give better results since we know some of the relations in our information. For example, storing "user1" -- friends --> "user2" or "user1" -- likes --> "league of legends" counters bad queries and irrelevant information to the Qdrant vectorstore.
 
 ## 💾 Developer Setup
 
