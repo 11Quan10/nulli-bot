@@ -38,7 +38,7 @@ Nulli is an AI-powered Discord bot built for natural, real-time voice interactio
 graph TD
     NULLI[🌸 Nulli]
     VC[🎙️ Discord Voice Channel]
-    DECIDE_TO_SPEAK@{pos: "l"}[🤔 Decide to speak]
+    DECIDE_TO_SPEAK[🤔 Decide to speak]
     AUDIO@{ shape: docs, label: "🔊 Audio Files per User" }
     SST[📝 Whisper Speech-to-Text]
     NULLI_REGEX[✏️ Nulli name mispronunciation correction]
