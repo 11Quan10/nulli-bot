@@ -150,20 +150,19 @@ async def process_audio_batch(users_audio_files):
         if len(audio) > max_frame_size:
             max_frame_size = len(audio)
     for user in file_corrupted_users:
-        os.remove(file_corrupted_users[user])
         del users_audio_files[user]
     for file in users_audio_files.values():
         await audio_tools.prepend_silence(file, max_frame_size - len(AudioSegment.from_file(file, format="wav")), file)
     user_transcriptions_full = {}
     for user in users_audio_files.keys():
         user_transcriptions_full[user] = await audio_tools.transcribe(users_audio_files[user])
-        os.remove(users_audio_files[user])
+        # os.remove(users_audio_files[user])
     #  combines all chunks into a single list of tuples (user, timestamp, text)
     chunks = [
         (user, chunk["timestamp"][0], chunk["text"])
         for user in user_transcriptions_full.keys()
+        if user_transcriptions_full[user] is not None
         for chunk in user_transcriptions_full[user]["chunks"]
-        if user_transcriptions_full[user]
     ]
     # sort the chunks by timestamp
     chunks.sort(key=lambda x: x[1])

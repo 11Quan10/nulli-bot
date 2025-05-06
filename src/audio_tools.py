@@ -68,11 +68,12 @@ class AudioTools:
                 max_new_tokens=256,
                 generate_kwargs={"language": "en"},
             )
+
+            return result
         except Exception as e:
             print(f"Error transcribing audio file \'{audio_file}\'", e)
 
-
-        return result
+        return None
 
     async def text_to_speech(self, text: str):
         rate = 24000
