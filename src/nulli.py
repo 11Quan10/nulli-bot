@@ -16,10 +16,7 @@ import warnings
 import tempfile
 from pydub import AudioSegment
 
-
 warnings.filterwarnings("ignore")
-
-
 load_dotenv()
 token = os.getenv("DISCORD_BOT_TOKEN")
 
@@ -48,6 +45,7 @@ class Connection(TypedDict):
     connection_flag: bool
     start_time_no_one_speaking: int
     audio_tempfile: str
+    responding: bool
 
 
 # initialize per-server variables
@@ -89,6 +87,7 @@ async def join(ctx: commands.Context):
         can_speak=True,
         start_time_no_one_speaking=-1,
         audio_tempfile="./audio/audio_tempfile",
+        responding=False,
     )
 
     connections[ctx.guild.id]["voice_client"].listen(
@@ -119,34 +118,33 @@ async def connection_event_loop(connection: Connection):
         if connection["connection_flag"] is False:
             break
         print("Checking for speaking users...")
-        asyncio.create_task(check_users_speaking(connection))
+        speaking_flag = False
+        for member in connection["voice_client"].channel.members:
+            if connection["voice_client"].get_speaking(member):
+                speaking_flag = True
+        if speaking_flag is False:
+            if connection["start_time_no_one_speaking"] == -1:
+                connection["start_time_no_one_speaking"] = time.time()
+            elif time.time() - connection["start_time_no_one_speaking"] > 5:
+                connection["responding"] = True
+                user_list = connection["voice_client"].channel.members
+                users_audio_files = {}
+                for member in user_list:
+                    if os.path.exists(f"{connection['audio_tempfile']}_{member.name}.wav"):
+                        users_audio_files[member.name] = f"{connection['audio_tempfile']}_{member.name}.wav"
+                print("Processing audio files...")
+                processed_transcriptions = await process_audio_batch(users_audio_files=users_audio_files)
+                print("Responding...")
+                await invoke(
+                    ctx_guild_id=connection["ctx_guild_id"],
+                    messages=[HumanMessage(content=f"{chunk[0]}: {chunk[2]}") for chunk in processed_transcriptions],
+                )
+                connection["start_time_no_one_speaking"] = -1
+                connection["responding"] = False
         await asyncio.sleep(1)
 
 
-async def check_users_speaking(connection: Connection):
-    speaking_flag = False
-    for member in connection["voice_client"].channel.members:
-        if connection["voice_client"].get_speaking(member):
-            speaking_flag = True
-    if speaking_flag is False:
-        if connection["start_time_no_one_speaking"] == -1:
-            connection["start_time_no_one_speaking"] = time.time()
-        elif time.time() - connection["start_time_no_one_speaking"] > 5:
-            user_list = connection["voice_client"].channel.members
-            users_audio_files = {}
-            for member in user_list:
-                if os.path.exists(f"{connection['audio_tempfile']}_{member.name}.wav"):
-                    users_audio_files[member.name] = f"{connection['audio_tempfile']}_{member.name}.wav"
-            processed_transcriptions = process_audio_batch(users_audio_files=users_audio_files)
-            response = await invoke(
-                ctx_guild_id=connection["ctx_guild_id"],
-                messages=[HumanMessage(content=f"{chunk[0]}: {chunk[2]}") for chunk in processed_transcriptions],
-            )
-            speak(ctx_guild_id=connection["ctx_guild_id"], text=response["response"])
-            connection["start_time_no_one_speaking"] = -1
-
-
-def process_audio_batch(users_audio_files):
+async def process_audio_batch(users_audio_files):
     # need to make all audio files the same length
     max_frame_size = 0
     for file in users_audio_files.values():
@@ -154,10 +152,10 @@ def process_audio_batch(users_audio_files):
         if len(audio) > max_frame_size:
             max_frame_size = len(audio)
     for file in users_audio_files.values():
-        audio_tools.prepend_silence(file, max_frame_size - len(AudioSegment.from_file(file, format="wav")), file)
+        await audio_tools.prepend_silence(file, max_frame_size - len(AudioSegment.from_file(file, format="wav")), file)
     user_transcriptions_full = {}
     for user in users_audio_files.keys():
-        user_transcriptions_full[user] = audio_tools.transcribe(users_audio_files[user])
+        user_transcriptions_full[user] = await audio_tools.transcribe(users_audio_files[user])
     #  combines all chunks into a single list of tuples (user, timestamp, text)
     chunks = [
         (user, chunk["timestamp"][0], chunk["text"])
@@ -181,8 +179,10 @@ async def invoke(ctx_guild_id, messages: list[HumanMessage]):
         _stop_audio_callback=filter_speak,
     )
     print(response["response"])
-    for message in response["messages"]:
+    for message in messages:
         message.pretty_print()
+    # for message in response["messages"]:
+    #     message.pretty_print()
 
 
 async def play_audio(vclient, filename: str):
@@ -201,13 +201,13 @@ async def filter_regex(text: str):
 
 
 async def speak(ctx_guild_id: int, text: str):
-    i = audio_tools.text_to_speech(text)
+    i = await audio_tools.text_to_speech(text)
     for j in range(i + 1):
         if not connections[ctx_guild_id]["can_speak"]:
             break
         await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
     if not connections[ctx_guild_id]["can_speak"]:
-        i = audio_tools.text_to_speech("Filtered")
+        i = await audio_tools.text_to_speech("Filtered")
         for j in range(i + 1):
             await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
         connections[ctx_guild_id]["can_speak"] = True
@@ -218,6 +218,7 @@ async def filter_speak(ctx_guild_id):
     connections[ctx_guild_id]["voice_client"] = False
     if vclient.is_playing():
         vclient.stop()
+    return None
 
 
 bot.run(token)

@@ -56,7 +56,6 @@ class Graph:
                 "stop_audio_callback": _stop_audio_callback,
             }
         )
-        print(results)
         return results
 
     def _build_graph(self):
