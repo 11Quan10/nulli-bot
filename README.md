@@ -18,6 +18,12 @@ Nulli is an AI-powered Discord bot built for natural, real-time voice interactio
 
 ---
 
+## 🎮 Project Demo
+
+https://youtu.be/4G_1DTRLLik
+
+---
+
 ## 🚀 Features
 
 - 🎙️ Joins and leaves Discord voice channels
