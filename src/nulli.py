@@ -1,5 +1,8 @@
 import asyncio
-from audio_tools import AudioTools
+import time
+from typing import Dict, TypedDict
+from audio_tools import AudioTools, WaveSinkMultipleUsers
+from discord.ext.voice_recv import SilenceGeneratorSink
 import codecs
 import re
 import torch
@@ -10,8 +13,12 @@ from langchain_core.messages import HumanMessage
 import os
 from graph.graph import Graph
 import warnings
+import tempfile
+from pydub import AudioSegment
+
 
 warnings.filterwarnings("ignore")
+
 
 load_dotenv()
 token = os.getenv("DISCORD_BOT_TOKEN")
@@ -31,11 +38,20 @@ if os.path.exists("bad_words.txt"):
 else:
     filter_pattern = re.compile(r"(?!)")
 
-# graph = Graph()
+graph = Graph()
+
+
+class Connection(TypedDict):
+    ctx_guild_id: int
+    voice_client: voice_recv.VoiceRecvClient
+    can_speak: bool
+    connection_flag: bool
+    start_time_no_one_speaking: int
+    audio_tempfile: str
+
 
 # initialize per-server variables
-connections = {}
-can_speak = {}
+connections: Dict[int, Connection] = {}
 
 
 @bot.event
@@ -55,46 +71,120 @@ async def on_message(message):
 
 
 @bot.command()
+async def talk(ctx: commands.Context, *, text: str):
+    await speak(ctx, text)
+
+
+@bot.command()
 async def join(ctx: commands.Context):
     channel = ctx.author.voice.channel
     if channel is None:
         await ctx.send("join a vc first")
         return
-    connections[ctx.guild.id] = await channel.connect(cls=voice_recv.VoiceRecvClient)
-    connections[ctx.guild.id].listen(audio_tools.StreamSink(audio_tools))
-    can_speak[ctx.guild.id] = True
+    vclient = await channel.connect(cls=voice_recv.VoiceRecvClient)
+    connections[ctx.guild.id] = Connection(
+        ctx_guild_id=ctx.guild.id,
+        voice_client=vclient,
+        connection_flag=True,
+        can_speak=True,
+        start_time_no_one_speaking=-1,
+        audio_tempfile="./audio/audio_tempfile",
+    )
+
+    connections[ctx.guild.id]["voice_client"].listen(
+        SilenceGeneratorSink(WaveSinkMultipleUsers(connections[ctx.guild.id]["audio_tempfile"]))
+    )
+
+    asyncio.create_task(connection_event_loop(connections[ctx.guild.id]))
 
 
 @bot.command()
 async def leave(ctx: commands.Context):
     if ctx.voice_client is not None:
-        ctx.voice_client.stop()
-        await ctx.bot.close()
-        await ctx.voice_client.disconnect()
+        connections[ctx.guild.id]["voice_client"].stop_listening()
+        connections[ctx.guild.id]["voice_client"].stop()
+        connections[ctx.guild.id]["voice_client"].cleanup()
+        connections[ctx.guild.id]["voice_client"].disconnect()
+        connections[ctx.guild.id]["audio_tempfile"].close()
+        if os.path.exists(connections[ctx.guild.id]["audio_tempfile"]):
+            os.remove(connections[ctx.guild.id]["audio_tempfile"])
         del connections[ctx.guild.id]
-        del can_speak[ctx.guild.id]
 
 
-@bot.command()
-async def filter(ctx: commands.Context):
-    await filter_speak(ctx)
+# EVENT LOOP
 
 
-@bot.command()
-async def invoke(ctx: commands.Context, *, text: str):
-    # response = await graph.invoke_model_with_human_messages(
-    #     [HumanMessage(content=f"{ctx.author.name}: {text}")],
-    #     _ctx=ctx,
-    #     _tts_callback=speak,
-    #     _stop_audio_callback=filter_speak,
-    # )
-    # print(response["response"])
-    # for message in response["messages"]:
-    #     message.pretty_print()
-    await ctx.send("response sent")
+async def connection_event_loop(connection: Connection):
+    while True:
+        if connection["connection_flag"] is False:
+            break
+        print("Checking for speaking users...")
+        asyncio.create_task(check_users_speaking(connection))
+        await asyncio.sleep(1)
+
+
+async def check_users_speaking(connection: Connection):
+    speaking_flag = False
+    for member in connection["voice_client"].channel.members:
+        if connection["voice_client"].get_speaking(member):
+            speaking_flag = True
+    if speaking_flag is False:
+        if connection["start_time_no_one_speaking"] == -1:
+            connection["start_time_no_one_speaking"] = time.time()
+        elif time.time() - connection["start_time_no_one_speaking"] > 5:
+            user_list = connection["voice_client"].channel.members
+            users_audio_files = {}
+            for member in user_list:
+                if os.path.exists(f"{connection['audio_tempfile']}_{member.name}.wav"):
+                    users_audio_files[member.name] = f"{connection['audio_tempfile']}_{member.name}.wav"
+            processed_transcriptions = process_audio_batch(users_audio_files=users_audio_files)
+            response = await invoke(
+                ctx_guild_id=connection["ctx_guild_id"],
+                messages=[HumanMessage(content=f"{chunk[0]}: {chunk[2]}") for chunk in processed_transcriptions],
+            )
+            speak(ctx_guild_id=connection["ctx_guild_id"], text=response["response"])
+            connection["start_time_no_one_speaking"] = -1
+
+
+def process_audio_batch(users_audio_files):
+    # need to make all audio files the same length
+    max_frame_size = 0
+    for file in users_audio_files.values():
+        audio = AudioSegment.from_file(file, format="wav")
+        if len(audio) > max_frame_size:
+            max_frame_size = len(audio)
+    for file in users_audio_files.values():
+        audio_tools.prepend_silence(file, max_frame_size - len(AudioSegment.from_file(file, format="wav")), file)
+    user_transcriptions_full = {}
+    for user in users_audio_files.keys():
+        user_transcriptions_full[user] = audio_tools.transcribe(users_audio_files[user])
+    #  combines all chunks into a single list of tuples (user, timestamp, text)
+    chunks = [
+        (user, chunk["timestamp"][0], chunk["text"])
+        for user in user_transcriptions_full.keys()
+        for chunk in user_transcriptions_full[user]["chunks"]
+    ]
+    # sort the chunks by timestamp
+    chunks.sort(key=lambda x: x[1])
+
+    return chunks
 
 
 # SERVICE FUNCTIONS
+
+
+async def invoke(ctx_guild_id, messages: list[HumanMessage]):
+    response = await graph.invoke_model_with_human_messages(
+        messages=messages,
+        _ctx_guild_id=ctx_guild_id,
+        _tts_callback=speak,
+        _stop_audio_callback=filter_speak,
+    )
+    print(response["response"])
+    for message in response["messages"]:
+        message.pretty_print()
+
+
 async def play_audio(vclient, filename: str):
     src = discord.FFmpegPCMAudio(source=filename, executable="ffmpeg.exe")
     vclient.play(src)
@@ -110,22 +200,22 @@ async def filter_regex(text: str):
     return None
 
 
-async def speak(ctx, text: str):
-    i = await audio_tools.text_to_speech(text)
+async def speak(ctx_guild_id: int, text: str):
+    i = audio_tools.text_to_speech(text)
     for j in range(i + 1):
-        if not can_speak[ctx.guild.id]:
+        if not connections[ctx_guild_id]["can_speak"]:
             break
-        await play_audio(connections[ctx.guild.id], f"{audio_tools.audio_root}/{j}.wav")
-    if not can_speak[ctx.guild.id]:
-        i = await audio_tools.text_to_speech("Filtered")
+        await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
+    if not connections[ctx_guild_id]["can_speak"]:
+        i = audio_tools.text_to_speech("Filtered")
         for j in range(i + 1):
-            await play_audio(connections[ctx.guild.id], f"{audio_tools.audio_root}/{j}.wav")
-        can_speak[ctx.guild.id] = True
+            await play_audio(connections[ctx_guild_id]["voice_client"], f"{audio_tools.audio_root}/{j}.wav")
+        connections[ctx_guild_id]["can_speak"] = True
 
 
-async def filter_speak(ctx):
-    vclient = connections[ctx.guild.id]
-    can_speak[ctx.guild.id] = False
+async def filter_speak(ctx_guild_id):
+    vclient = connections[ctx_guild_id]["voice_client"]
+    connections[ctx_guild_id]["voice_client"] = False
     if vclient.is_playing():
         vclient.stop()
 

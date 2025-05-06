@@ -10,6 +10,9 @@ import soundfile as sf
 import tempfile
 import discord
 from discord.ext import voice_recv
+from discord.ext.voice_recv.sinks import AudioSink
+from discord.ext.voice_recv.opus import VoiceData, Decoder as OpusDecoder
+import wave
 from pydub import AudioSegment
 import speech_recognition as sr
 from df import enhance, init_df
@@ -55,7 +58,7 @@ class AudioTools:
             generate_kwargs={"language": "en"},
         )
 
-        return result["text"]  # Get the transcribed text and strip any leading/trailing whitespace
+        return result
 
     def text_to_speech(self, text: str):
         rate = 24000
@@ -68,10 +71,17 @@ class AudioTools:
             sf.write(f"{self.audio_root}/{i}.wav", audio, rate)
         return max_i
 
+    def prepend_silence(self, audio_file: str, silence_duration_ms: float, output_file: str):
+        audio = AudioSegment.from_file(audio_file)
+        silence = AudioSegment.silent(duration=silence_duration_ms)
+        combined = silence + audio
+        combined.export(output_file, format="wav")
+        return output_file
+
     class StreamSink(voice_recv.extras.SpeechRecognitionSink):
         def __init__(self, outer_instance: "AudioTools"):
             self._outer_instance = outer_instance
-            super().__init__(default_recognizer="whisper")
+            super().__init__(default_recognizer="whisper", ignore_silence_packets=False)
 
         def is_silent_dbfs(self, audio_data: sr.AudioData, dbfs_threshold: float = -45.0) -> bool:
             # Convert audio data to WAV for pydub
@@ -85,6 +95,7 @@ class AudioTools:
 
         def get_default_process_callback(self) -> SRProcessDataCB:
             def cb(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[discord.User]) -> Optional[str]:
+                print("Process callback called: " + user.display_name if user else "Unknown User")
                 if self.is_silent_dbfs(audio):
                     return None
                 try:
@@ -105,7 +116,7 @@ class AudioTools:
                         print("Audio is silent, skipping transcription.")
                         return None
                     result = self._outer_instance.transcribe(temp_wav_path)
-                    return result
+                    return result["text"]
                 except Exception as e:
                     logging.exception("Error during transcription: %s", e)
                     return None
@@ -122,3 +133,32 @@ class AudioTools:
                     logging.info("%s said: %s", user.display_name if user else "Someone", text)
 
             return cb
+
+
+class WaveSinkMultipleUsers(AudioSink):
+    CHANNELS = OpusDecoder.CHANNELS
+    SAMPLE_WIDTH = OpusDecoder.SAMPLE_SIZE // OpusDecoder.CHANNELS
+    SAMPLING_RATE = OpusDecoder.SAMPLING_RATE
+
+    def __init__(self, destination: str):
+        super().__init__()
+        self._base_file = destination
+        self.users: dict[discord.User, wave.Wave_write] = {}
+
+    def wants_opus(self) -> bool:
+        return False
+
+    def write(self, user: Optional[discord.User], data: VoiceData) -> None:
+        if user not in self.users:
+            self.users[user] = wave.open(f"{self._base_file}_{user.name}.wav", "wb")
+            self.users[user].setnchannels(self.CHANNELS)
+            self.users[user].setsampwidth(self.SAMPLE_WIDTH)
+            self.users[user].setframerate(self.SAMPLING_RATE)
+        self.users[user].writeframes(data.pcm)
+
+    def cleanup(self) -> None:
+        try:
+            for user, file in self.users.items():
+                file.close()
+        except Exception:
+            logging.warning("WaveSink got error closing file on cleanup", exc_info=True)

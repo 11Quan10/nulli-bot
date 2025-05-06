@@ -31,7 +31,7 @@ class AgentState(TypedDict):
     start_time: float
     response_time: float
 
-    ctx: any
+    ctx_guild_id: any
     tts_callback: any
     stop_audio_callback: any
 
@@ -44,14 +44,14 @@ class Graph:
 
     @traceable
     async def invoke_model_with_human_messages(
-        self, messages: list[HumanMessage], _ctx=None, _tts_callback=None, _stop_audio_callback=None
+        self, messages: list[HumanMessage], _ctx_guild_id=None, _tts_callback=None, _stop_audio_callback=None
     ):
         results = await self.graph.ainvoke(
             {
                 "current_summary": self.current_summary,
                 "context": messages,
                 "start_time": time.time(),
-                "ctx": _ctx,
+                "ctx_guild_id": _ctx_guild_id,
                 "tts_callback": _tts_callback,
                 "stop_audio_callback": _stop_audio_callback,
             }
@@ -100,8 +100,8 @@ class Graph:
             response = re.sub(r"\([^)]*\)", "", response).strip()
 
             # play text as audio
-            if state["ctx"] is not None and state["tts_callback"] is not None:
-                asyncio.create_task(state["tts_callback"](state["ctx"], response))
+            if state["ctx_guild_id"] is not None and state["tts_callback"] is not None:
+                asyncio.create_task(state["tts_callback"](state["ctx_guild_id"], response))
             return {
                 "response": response,
                 "messages": [AIMessage(content=response, id="Response")],
@@ -115,8 +115,8 @@ class Graph:
                     "messages": [AIMessage(content=f"Response is safe. Response={state['response']}", id="Filter OK")],
                 }
             else:
-                if state["ctx"] is not None and state["stop_audio_callback"] is not None:
-                    asyncio.create_task(state["stop_audio_callback"](state["ctx"]))
+                if state["ctx_guild_id"] is not None and state["stop_audio_callback"] is not None:
+                    asyncio.create_task(state["stop_audio_callback"](state["ctx_guild_id"]))
 
                 return {
                     "messages": [
