@@ -104,6 +104,7 @@ class Graph:
             pass
 
         async def respond(state):
+            SystemMessage(content=f"This is the current summary:\n\n{state['current_summary']}").pretty_print()
             response = await respond_chain.respond_chain.ainvoke(
                 [
                     SystemMessage(content=system_prompts.respond_system_prompt),
